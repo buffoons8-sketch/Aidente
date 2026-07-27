@@ -11,10 +11,10 @@ class MenuViewModel {
     private let bootTimestamp: Date?
 
     var batteryPercentageText: String = "0%"
-    var powerSourceText: String = "Battery"
-    var timeRemainingText: String = "Calculating..."
-    var uptimeText: String = "0m"
-    var batteryModeText: String = "Unknown"
+    var powerSourceText: String = IadenteL10n.t("电池")
+    var timeRemainingText: String = IadenteL10n.t("正在估算…")
+    var uptimeText: String = IadenteL10n.t("0 分钟", "0 min")
+    var batteryModeText: String = IadenteL10n.t("未知")
     var batteryTemperatureText: String = "0°C"
     var externalInputText: String = "0V @ 0A"
     var internalInputText: String = "0V @ 0A"
@@ -29,9 +29,15 @@ class MenuViewModel {
     var powerSource: PowerSource = .battery
     var isCharging: Bool = false
     var isLowPowerModeEnabled: Bool = false
+    var topEnergyApps: [AppEnergyUsageSnapshot] = []
+    var hasEnergyUsageSample: Bool = false
 
     var chargeLimitOverrideActive: Bool { chargeManager.chargeLimitOverrideActive }
     var forceDischargeActive: Bool { chargeManager.forceDischargeActive }
+    var manualPauseActive: Bool { chargeManager.manualPauseActive }
+    var calibrationActive: Bool { chargeManager.calibrationStage != .idle }
+    var operationStatusText: String { chargeManager.operationStatusTitle }
+    var hasControlError: Bool { chargeManager.controlError != nil }
     var manageChargingEnabled: Bool { Defaults[.manageCharging] }
     var adapterConnected: Bool = false
 
@@ -39,6 +45,7 @@ class MenuViewModel {
     private var settingsObservation: Task<Void, Never>?
     private var uptimeTask: Task<Void, Never>?
     private var powerModeObservation: Task<Void, Never>?
+    private var energyUsageTask: Task<Void, Never>?
 
     init(batteryService: BatteryService, chargeManager: ChargeManager) {
         self.batteryService = batteryService
@@ -73,7 +80,10 @@ class MenuViewModel {
 
     private func startObservingSettings() {
         settingsObservation = Task { [weak self] in
-            for await _ in Defaults.updates([.useHardwarePercentage], initial: false) {
+            for await _ in Defaults.updates(
+                [.useHardwarePercentage, .appLanguage],
+                initial: false
+            ) {
                 guard let self else { return }
                 self.updateFormattedValues(
                     from: self.batteryService.metrics,
@@ -105,6 +115,28 @@ class MenuViewModel {
         chargeManager.toggleForceDischarge()
     }
 
+    func toggleManualPause() {
+        if manualPauseActive {
+            chargeManager.resumeNormalManagement()
+        } else {
+            chargeManager.pauseCharging()
+        }
+    }
+
+    func toggleCalibration() {
+        if calibrationActive {
+            chargeManager.cancelCalibration()
+        } else {
+            chargeManager.startCalibration()
+        }
+    }
+
+    func refresh() {
+        updateUptimeText()
+        batteryService.scheduleSinglePoll(delay: .zero)
+        refreshEnergyUsage()
+    }
+
     private func updateFormattedValues(from metrics: BatteryMetrics, adapter: AdapterMetrics) {
         let useHardware = Defaults[.useHardwarePercentage]
         let percentage =
@@ -117,20 +149,20 @@ class MenuViewModel {
 
         switch derivedPowerSource {
         case .battery:
-            powerSourceText = "Battery"
+            powerSourceText = IadenteL10n.t("电池")
         case .acAdapter:
-            powerSourceText = "Power Adapter"
+            powerSourceText = IadenteL10n.t("电源适配器")
         case .both:
-            powerSourceText = "Battery & Power Adapter"
+            powerSourceText = IadenteL10n.t("电池与电源适配器")
         }
 
         let formatted = formatTimeRemaining(minutes: metrics.timeRemaining)
         if !formatted.isEmpty {
             timeRemainingText = formatted
         } else if derivedPowerSource == .acAdapter && !metrics.isCharging {
-            timeRemainingText = "Not Charging"
+            timeRemainingText = IadenteL10n.t("未在充电")
         } else {
-            timeRemainingText = "Calculating..."
+            timeRemainingText = IadenteL10n.t("正在估算…")
         }
 
         updateUptimeText()
@@ -138,14 +170,14 @@ class MenuViewModel {
         if derivedPowerSource == .acAdapter {
             if metrics.isCharging {
                 chargingMode = .charging
-                batteryModeText = "Charging"
+                batteryModeText = IadenteL10n.t("正在充电")
             } else {
                 chargingMode = .pluggedIn
-                batteryModeText = "Plugged In (Not Charging)"
+                batteryModeText = IadenteL10n.t("已接通电源（未充电）")
             }
         } else {
             chargingMode = .discharging
-            batteryModeText = "Discharging"
+            batteryModeText = IadenteL10n.t("正在使用电池")
         }
 
         batteryTemperatureText =
@@ -185,16 +217,25 @@ class MenuViewModel {
 
     private func updateUptimeText() {
         guard let bootTimestamp else {
-            uptimeText = "Unknown"
+            uptimeText = IadenteL10n.t("未知")
             return
         }
 
-        let elapsed = Duration.seconds(Date().timeIntervalSince(bootTimestamp))
-        uptimeText = elapsed.formatted(.units(
-            allowed: [.days, .hours, .minutes],
-            width: .condensedAbbreviated,
-            zeroValueUnits: .hide
-        ))
+        let totalMinutes = max(0, Int(Date().timeIntervalSince(bootTimestamp) / 60))
+        let days = totalMinutes / 1_440
+        let hours = (totalMinutes % 1_440) / 60
+        let minutes = totalMinutes % 60
+        var components: [String] = []
+        if days > 0 {
+            components.append(IadenteL10n.t("\(days) 天", "\(days)d"))
+        }
+        if hours > 0 {
+            components.append(IadenteL10n.t("\(hours) 小时", "\(hours)h"))
+        }
+        if minutes > 0 || components.isEmpty {
+            components.append(IadenteL10n.t("\(minutes) 分钟", "\(minutes)m"))
+        }
+        uptimeText = components.prefix(2).joined(separator: " ")
     }
 
     private func startUptimeTimer() {
@@ -213,14 +254,50 @@ class MenuViewModel {
         uptimeTask = nil
     }
 
+    private func startEnergyUsageTimer() {
+        guard energyUsageTask == nil else { return }
+
+        energyUsageTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let snapshots = await Task.detached(priority: .utility) {
+                    AppEnergyUsageService.readTopApps()
+                }.value
+
+                guard !Task.isCancelled else { return }
+                self?.topEnergyApps = snapshots
+                self?.hasEnergyUsageSample = true
+
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
+    }
+
+    private func stopEnergyUsageTimer() {
+        energyUsageTask?.cancel()
+        energyUsageTask = nil
+    }
+
+    private func refreshEnergyUsage() {
+        Task { [weak self] in
+            let snapshots = await Task.detached(priority: .utility) {
+                AppEnergyUsageService.readTopApps()
+            }.value
+            guard !Task.isCancelled else { return }
+            self?.topEnergyApps = snapshots
+            self?.hasEnergyUsageSample = true
+        }
+    }
+
     func menuWillOpen() {
         updateUptimeText()
         startUptimeTimer()
+        startEnergyUsageTimer()
         batteryService.enableFastPolling()
     }
 
     func menuDidClose() {
         stopUptimeTimer()
+        stopEnergyUsageTimer()
         batteryService.disableFastPolling()
     }
 
@@ -234,7 +311,13 @@ class MenuViewModel {
         }
         let hours = minutes / 60
         let mins = minutes % 60
-        return String(format: "%02d:%02d", hours, mins)
+        if hours == 0 {
+            return IadenteL10n.t("\(mins) 分钟", "\(mins) min")
+        }
+        return IadenteL10n.t(
+            "\(hours) 小时 \(mins) 分钟",
+            "\(hours) hr \(mins) min"
+        )
     }
 
     deinit {
@@ -243,6 +326,7 @@ class MenuViewModel {
             settingsObservation?.cancel()
             uptimeTask?.cancel()
             powerModeObservation?.cancel()
+            energyUsageTask?.cancel()
         }
     }
 }

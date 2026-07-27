@@ -1,4 +1,5 @@
 import Foundation
+import IadenteShared
 import ServiceManagement
 import os.log
 
@@ -8,25 +9,44 @@ enum ChargingHelperStatus {
     case installed
 }
 
+enum ChargingHelperManagerError: LocalizedError {
+    case runningFromDiskImage
+
+    var errorDescription: String? {
+        switch self {
+        case .runningFromDiskImage:
+            IadenteL10n.t(
+                "iadente 正在从安装磁盘映像中运行。请先退出应用，将 iadente 拖入“应用程序”文件夹，再从“应用程序”中打开。",
+                "iadente is running from a disk image. Quit the app, drag it to Applications, then open it from Applications."
+            )
+        }
+    }
+}
+
 @MainActor
 @Observable
 class ChargingHelperManager {
     static let shared = ChargingHelperManager()
 
-    private static let machServiceName = "com.srimanachanta.stasis.charging-helper"
-    private static let plistName = "com.srimanachanta.stasis.charging-helper.plist"
+    private static let machServiceName = "com.iadente.app.control"
+    private static let plistName = "com.iadente.app.control.plist"
 
     private let service: SMAppService
     private var connection: NSXPCConnection?
     private let logger = Logger(
-        subsystem: "com.srimanachanta.stasis",
+        subsystem: "com.iadente.app",
         category: "ChargingHelperManager"
     )
 
     private(set) var helperStatus: ChargingHelperStatus
+    private(set) var registrationError: String?
 
     var isInstalled: Bool {
         service.status == .enabled
+    }
+
+    var isRunningFromDiskImage: Bool {
+        Bundle.main.bundleURL.resolvingSymlinksInPath().path.hasPrefix("/Volumes/")
     }
 
     private init() {
@@ -39,6 +59,9 @@ class ChargingHelperManager {
     }
 
     func install() throws {
+        guard !isRunningFromDiskImage else {
+            throw ChargingHelperManagerError.runningFromDiskImage
+        }
         logger.info("Registering charging helper daemon")
 
         do {
@@ -48,11 +71,32 @@ class ChargingHelperManager {
             // processes the background item notification, even though the
             // registration advanced to requiresApproval or enabled.
             if service.status != .enabled && service.status != .requiresApproval {
+                registrationError = error.localizedDescription
                 throw error
             }
         }
 
+        registrationError = nil
         refreshStatus()
+    }
+
+    func ensureInstalled() throws {
+        refreshStatus()
+        guard helperStatus == .notInstalled else { return }
+        try install()
+    }
+
+    func repair() async throws {
+        guard !isRunningFromDiskImage else {
+            throw ChargingHelperManagerError.runningFromDiskImage
+        }
+
+        logger.info("Repairing charging helper daemon registration")
+        disconnect()
+        if service.status == .enabled || service.status == .requiresApproval {
+            try await unregisterAndWait()
+        }
+        try install()
     }
 
     func uninstall() throws {
@@ -70,13 +114,13 @@ class ChargingHelperManager {
         }
     }
 
-    func getHelper(errorHandler: @escaping @Sendable (Error) -> Void) -> ChargingHelperProtocol? {
+    func getHelper(errorHandler: @escaping @Sendable (Error) -> Void) -> IadenteControlProtocol? {
         if connection == nil {
             connect()
         }
         guard let connection else { return nil }
         return connection.remoteObjectProxyWithErrorHandler(errorHandler)
-            as? ChargingHelperProtocol
+            as? IadenteControlProtocol
     }
 
     private func connect() {
@@ -85,7 +129,7 @@ class ChargingHelperManager {
             machServiceName: Self.machServiceName
         )
         newConnection.remoteObjectInterface = NSXPCInterface(
-            with: ChargingHelperProtocol.self
+            with: IadenteControlProtocol.self
         )
 
         newConnection.invalidationHandler = { [weak self] in
@@ -111,5 +155,19 @@ class ChargingHelperManager {
     func disconnect() {
         connection?.invalidate()
         connection = nil
+    }
+
+    private func unregisterAndWait() async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            service.unregister { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume()
+                }
+            }
+        }
+        helperStatus = .notInstalled
     }
 }

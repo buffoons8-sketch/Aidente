@@ -1,12 +1,13 @@
 import Foundation
+import IadenteShared
 import os.log
 import smc_power
 
 private enum Constants {
-    static let helperSubsystem = "com.srimanachanta.stasis.helper"
+    static let helperSubsystem = "com.iadente.app.reader"
 }
 
-final class Helper: NSObject, HelperProtocol {
+final class Helper: NSObject, IadenteReaderProtocol {
     private let logger = Logger(
         subsystem: Constants.helperSubsystem,
         category: "Helper"

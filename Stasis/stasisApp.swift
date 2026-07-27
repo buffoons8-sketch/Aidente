@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct StasisApp: App {
+struct IadenteApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {

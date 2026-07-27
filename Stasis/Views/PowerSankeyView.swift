@@ -13,7 +13,7 @@ struct PowerSankeyView: View {
         static let spacerHeight: CGFloat = 20
         static let largeNodeHeight: CGFloat = 100
         static let viewHeight: CGFloat = 125
-        static let flowOpacity: Double = 0.15
+        static let flowOpacity: Double = 0.20
         static let powerLabelSize: CGFloat = 13
         static let powerLabelSpacing: CGFloat = 45
     }
@@ -234,7 +234,15 @@ struct PowerSankeyView: View {
 
         context.fill(
             path,
-            with: .color(Color.primary.opacity(Layout.flowOpacity))
+            with: .linearGradient(
+                Gradient(colors: [
+                    IadenteTheme.ocean.opacity(Layout.flowOpacity),
+                    IadenteTheme.jade.opacity(Layout.flowOpacity),
+                    IadenteTheme.gold.opacity(Layout.flowOpacity * 0.92),
+                ]),
+                startPoint: CGPoint(x: topLeft.x, y: topLeft.y),
+                endPoint: CGPoint(x: topRight.x, y: bottomRight.y)
+            )
         )
     }
 }
@@ -242,9 +250,20 @@ struct PowerSankeyView: View {
 struct PowerLabel: View {
     let power: Double
     var body: some View {
-        Text(String(format: "%.0f W", abs(power)))
+        Text(String(format: "%.2f W", abs(power)))
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(.black.opacity(0.28))
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(.white.opacity(0.11))
+            )
+            .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
     }
 }
 
@@ -253,6 +272,16 @@ struct NodeView: View {
     let value: Double?
     let isLeftSide: Bool
     let cornerRadius: CGFloat = 16.0
+
+    private var colors: [Color] {
+        if icon.contains("battery") {
+            return IadenteTheme.chargingColors
+        }
+        if icon.contains("plug") || icon.contains("bolt") {
+            return IadenteTheme.automationColors
+        }
+        return IadenteTheme.generalColors
+    }
 
     var body: some View {
         ZStack {
@@ -263,7 +292,9 @@ struct NodeView: View {
                 topTrailingRadius: isLeftSide ? 0 : cornerRadius,
                 style: .continuous
             )
-            .fill(Color.primary.opacity(0.05))
+            .fill(
+                (colors.first ?? IadenteTheme.ocean).opacity(0.17)
+            )
             .overlay(
                 UnevenRoundedRectangle(
                     topLeadingRadius: isLeftSide ? cornerRadius : 0,
@@ -272,55 +303,29 @@ struct NodeView: View {
                     topTrailingRadius: isLeftSide ? 0 : cornerRadius,
                     style: .continuous
                 )
-                .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
+                .strokeBorder(
+                    (colors.first ?? IadenteTheme.ocean).opacity(0.42),
+                    lineWidth: 1
+                )
             )
             .frame(width: 60)
+            .shadow(
+                color: (colors.first ?? IadenteTheme.ocean).opacity(0.16),
+                radius: 3,
+                y: 2
+            )
 
             VStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(colors.last ?? IadenteTheme.sky)
                 if let value {
-                    Text(String(format: "%.0f W", value))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    Text(String(format: "%.2f W", abs(value)))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(colors.last ?? IadenteTheme.sky)
+                        .minimumScaleFactor(0.75)
                 }
             }
         }
     }
-}
-
-#Preview {
-    NodeView(icon: "battery.100.bolt", value: 36.5, isLeftSide: true).frame(
-        height: 100
-    )
-}
-
-#Preview {
-    let items: [(PowerSource, Bool, Double, Double, Double)] = [
-        (.both, false, -20.16, 36.0, 56.16),
-        (.acAdapter, true, 20.0, 30.0, 10.0),
-        (.battery, false, -18.63, 0.0, 18.63),
-        (.acAdapter, false, 0.0, 25.0, 25.0),
-        (.acAdapter, false, 23, 39, 16),
-    ]
-    LazyVGrid(
-        columns: [
-            GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()),
-        ],
-        spacing: 16
-    ) {
-        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-            PowerSankeyView(
-                powerSource: item.0,
-                isCharging: item.1,
-                batteryPower: item.2,
-                adapterPower: item.3,
-                systemPower: item.4
-            )
-            .frame(height: 125)
-        }
-    }
-    .padding(12)
-    .frame(width: 900)
 }

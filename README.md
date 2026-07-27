@@ -1,71 +1,99 @@
-# Stasis
+# iadente
 
-**A smarter battery icon for your MacBook.** Monitor power metrics, manage charge limits, and extend your battery's lifespan — all from the menu bar.
+iadente is an independent, open-source macOS menu bar app for Apple Silicon
+MacBooks. It monitors battery and power data and can manage low-level charging
+controls through an explicitly approved privileged helper.
 
-Stasis gives you real-time insight into your MacBook's power system and lets you control charging behavior directly, without relying on macOS's opaque "Optimized Battery Charging."
+Version 0.4.1 follows the macOS system language by default and also offers
+explicit Chinese/English choices. It merges live battery percentage and
+charge-limit adjustment into one interactive battery track, and uses an
+adaptive power-flow diagram for live power data.
 
-> **Apple Silicon only.** The heuristics and mechanics to interface with metrics and charging between both of these platforms varies a lot. Currently, the app only supports Apple Silicon MacBooks.
->
-> Requires **macOS 14.8+**.
+This project does not contain AlDente Pro code, assets, activation logic, or
+modified binaries. It implements similar battery-care workflows from public
+behavior descriptions and GPL-compatible open-source foundations.
 
-![Stasis Menu Bar](https://github.com/srimanachanta/Stasis/wiki/images/FullApp.jpg)
+## Requirements
 
-## Installation
+- Apple Silicon MacBook
+- macOS 14 or later
+- Administrator approval for charge-control features
 
-### Homebrew (Recommended)
+Monitoring works without the privileged helper. Unsupported controls are
+disabled rather than forced.
 
-```bash
-brew install --cask srimanachanta/tap/stasis
+## Features
+
+- Configurable charge limit
+- Sailing range to avoid micro-charging
+- Automatic or one-time discharge
+- Top Up to 100%
+- Persistent multi-stage calibration:
+  - charge to 100%
+  - discharge to the configured low level
+  - recharge to 100%
+  - hold at full charge
+  - restore the saved charge limit
+- Heat protection with five-minute hysteresis
+- Hardware and macOS battery percentages
+- Battery health, cycle count, temperature, voltage, current, and power
+- Power-flow visualization
+- MagSafe LED states when supported
+- Pause charging while sleeping
+- Optional charging-state preservation after the app quits
+- Prevent sleep until the charge limit is reached
+- Scheduled charge limits, Top Up, calibration, pause, and discharge tasks
+- Login launch and customizable menu-bar/dashboard display
+- Follow-system language mode plus instant Chinese/English switching
+- Apple Shortcuts-compatible URL actions
+
+## Install
+
+Drag `iadente.app` to `/Applications`, open it, then enable charge management in
+Settings → Charging. macOS may ask you to approve the background helper in
+System Settings → General → Login Items.
+
+The distributed local build is ad-hoc signed, not Apple-notarized. If Finder
+blocks the first launch, right-click the app and choose Open.
+
+## Shortcuts URLs
+
+Use Shortcuts → Open URLs with one of:
+
+```text
+iadente://set-limit?value=80
+iadente://top-up
+iadente://calibrate
+iadente://pause
+iadente://discharge?value=70
+iadente://resume
 ```
-*If you encounter a macOS quarantine warning, run:*
-```bash
-xattr -dr com.apple.quarantine /Applications/Stasis.app
+
+## Build from source
+
+The repository includes fixed copies of its open-source dependencies so it can
+build without downloading packages:
+
+```text
+chmod +x BuildSupport/build_app.sh
+BuildSupport/build_app.sh
 ```
 
-### Direct Download
+The output is `Dist/iadente.app`.
 
-1. Download from [GitHub Releases](https://github.com/srimanachanta/Stasis/releases).
-2. Open the `.zip` and drag Stasis into `/Applications`.
-3. Remove the quarantine flag:
-   ```bash
-   xattr -cr /Applications/Stasis.app
-   ```
-4. Open Stasis from Applications.
+## Safety and uninstall
 
-## Highlights
+Before uninstalling, turn off Manage Charging in Settings → Charging. This
+unregisters the privileged helper and restores the default charge, adapter, and
+MagSafe LED states.
 
-- **Charge Limit** — Set a max charge level (50–100%) enforced at the hardware level, even through sleep.
-- **Sailing Mode** — Avoid micro-charging by letting the battery float within a configurable range.
-- **Automatic Discharge** — Drain to your target level while staying plugged in.
-- **Heat Protection** — Pause charging when battery temperature gets too high.
-- **Power Dashboard** — Live voltage, current, wattage, temperature, health, and cycle count in the menu bar.
-- **Power Flow Diagram** — Sankey visualization of real-time power distribution.
-- **MagSafe LED Control** — Green at limit, orange while charging.
+Low-level SMC controls are private interfaces and may change in future macOS
+versions. Use at your own risk and keep a charger available during calibration.
 
-## Documentation
+## License and attribution
 
-For detailed feature explanations, settings walkthroughs, architecture info, and FAQ, see the **[Stasis Wiki](https://github.com/srimanachanta/Stasis/wiki)**.
+iadente is licensed under GPL-3.0 because it is based on the GPL-3.0 Stasis
+project. See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
 
-## Building from Source
-
-```bash
-git clone https://github.com/srimanachanta/Stasis.git
-cd Stasis
-open stasis.xcodeproj
-```
-
-Requires macOS 15.7+ and Xcode with Swift 6+ support. Dependencies resolve automatically via Swift Package Manager.
-
-## Contributing
-
-PRs welcome. Please open an issue first for large changes.
-
-## Acknowledgments
-
-- [SMCKit](https://github.com/srimanachanta/SMCKit) — SMC access library
-- [AsahiLinux](https://asahilinux.org/) — SMC key reverse engineering
-- [Battery-Toolkit](https://github.com/mhaeuser/Battery-Toolkit) — SMC key documentation
-
-## License
-
-[GPL-3.0](LICENSE)
+AlDente is a trademark of its respective owner. iadente is independent and is
+not affiliated with, endorsed by, or distributed by AppHouseKitchen.

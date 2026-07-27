@@ -7,3 +7,9 @@ playground.xcworkspace
 
 build/
 .claude/
+.DS_Store
+.build/
+Build/
+Dist/
+qa/
+design-qa.md

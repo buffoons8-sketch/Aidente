@@ -1,4 +1,5 @@
 import Foundation
+import IadenteShared
 
 class ServiceDelegate: NSObject, NSXPCListenerDelegate {
     let helper = Helper()
@@ -8,7 +9,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
         shouldAcceptNewConnection newConnection: NSXPCConnection
     ) -> Bool {
         newConnection.exportedInterface = NSXPCInterface(
-            with: (any HelperProtocol).self
+            with: (any IadenteReaderProtocol).self
         )
         newConnection.exportedObject = helper
         newConnection.resume()

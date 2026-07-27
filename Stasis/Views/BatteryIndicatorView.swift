@@ -24,7 +24,9 @@ struct BatteryIndicatorView: View {
     private var fillColor: Color {
         if isCritical { return .red }
         if isLowPowerModeEnabled { return .yellow }
-        if chargingMode == .charging { return .green }
+        if chargingMode == .charging { return IadenteTheme.mint }
+        if showState && chargingMode == .pluggedIn { return IadenteTheme.ocean }
+        if showState { return IadenteTheme.jade }
         return .primary
     }
 
@@ -87,14 +89,21 @@ struct BatteryIndicatorView: View {
     }
 
     private var accessibilityDescription: String {
-        var parts = ["Battery \(batteryLevel) percent"]
+        var parts = [
+            IadenteL10n.t(
+                "电池电量 \(batteryLevel)%",
+                "Battery level \(batteryLevel)%"
+            )
+        ]
         switch chargingMode {
-        case .charging: parts.append("charging")
-        case .pluggedIn: parts.append("plugged in")
+        case .charging: parts.append(IadenteL10n.t("正在充电"))
+        case .pluggedIn: parts.append(IadenteL10n.t("已接通电源", "Plugged In"))
         case .discharging: break
         }
-        if isLowPowerModeEnabled { parts.append("low power mode") }
-        return parts.joined(separator: ", ")
+        if isLowPowerModeEnabled {
+            parts.append(IadenteL10n.t("低电量模式", "Low Power Mode"))
+        }
+        return parts.joined(separator: "，")
     }
 
     @ViewBuilder
@@ -240,53 +249,4 @@ struct BatteryTerminal: View {
         .opacity(0.4)
         .offset(x: 1)
     }
-}
-
-#Preview {
-    VStack(alignment: .leading, spacing: 16) {
-        ForEach([100, 80, 50, 20, 10, 5], id: \.self) { level in
-            HStack(spacing: 20) {
-                BatteryIndicatorView(batteryLevel: level, chargingMode: .discharging)
-                BatteryIndicatorView(batteryLevel: level, chargingMode: .charging)
-                BatteryIndicatorView(batteryLevel: level, chargingMode: .pluggedIn)
-            }
-        }
-
-        Divider()
-        Text("Inside Icon — normal / charging / plugged")
-            .font(.caption).foregroundStyle(.secondary)
-
-        ForEach([100, 80, 50, 20, 10, 5], id: \.self) { level in
-            HStack(spacing: 20) {
-                BatteryIndicatorView(
-                    batteryLevel: level, chargingMode: .discharging,
-                    percentageDisplayLocation: .insideIcon, showState: true)
-                BatteryIndicatorView(
-                    batteryLevel: level, chargingMode: .charging,
-                    percentageDisplayLocation: .insideIcon, showState: true)
-                BatteryIndicatorView(
-                    batteryLevel: level, chargingMode: .pluggedIn,
-                    percentageDisplayLocation: .insideIcon, showState: true)
-            }
-        }
-
-        Divider()
-        Text("Inside Icon — Low Power Mode (critical red takes priority)")
-            .font(.caption).foregroundStyle(.secondary)
-
-        ForEach([100, 50, 10, 5], id: \.self) { level in
-            HStack(spacing: 20) {
-                BatteryIndicatorView(
-                    batteryLevel: level, chargingMode: .discharging,
-                    isLowPowerModeEnabled: true,
-                    percentageDisplayLocation: .insideIcon, showState: true)
-                BatteryIndicatorView(
-                    batteryLevel: level, chargingMode: .charging,
-                    isLowPowerModeEnabled: true,
-                    percentageDisplayLocation: .insideIcon, showState: true)
-            }
-        }
-    }
-    .padding()
-    .background(Color(NSColor.windowBackgroundColor))
 }

@@ -13,7 +13,7 @@ class IOKitService {
     private var continuation: AsyncStream<(BatteryMetrics, AdapterMetrics)>.Continuation?
 
     private let logger = Logger(
-        subsystem: "com.srimanachanta.stasis",
+        subsystem: "com.iadente.app",
         category: "IOKitService"
     )
 

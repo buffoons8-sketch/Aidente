@@ -2,7 +2,27 @@ import Defaults
 import Foundation
 import smc_power
 
+enum IadenteRuntime {
+    static let isUIPreview = CommandLine.arguments.contains("--ui-preview")
+}
+
 extension MagSafeLEDState: Defaults.Serializable {}
+
+enum AppLanguage: String, Defaults.Serializable, CaseIterable, Identifiable {
+    case system
+    case simplifiedChinese
+    case english
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: IadenteL10n.t("跟随系统", "System")
+        case .simplifiedChinese: "中文"
+        case .english: "English"
+        }
+    }
+}
 
 enum PercentageDisplayLocation: String, Defaults.Serializable, CaseIterable, Identifiable {
     case hidden
@@ -12,13 +32,74 @@ enum PercentageDisplayLocation: String, Defaults.Serializable, CaseIterable, Ide
     var id: String { rawValue }
 }
 
+enum MenuBarReadoutStyle: String, Defaults.Serializable, CaseIterable, Identifiable {
+    case batteryPercentage
+    case systemPower
+    case batteryAndPower
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .batteryPercentage: IadenteL10n.t("实时电量")
+        case .systemPower: IadenteL10n.t("实时功率")
+        case .batteryAndPower: IadenteL10n.t("电量与功率")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .batteryPercentage: "battery.75percent"
+        case .systemPower: "waveform.path.ecg"
+        case .batteryAndPower: "gauge.with.dots.needle.67percent"
+        }
+    }
+}
+
+enum InterfaceMaterialStyle: String, Defaults.Serializable, CaseIterable, Identifiable {
+    case solid
+    case glass
+    case frosted
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .solid: IadenteL10n.t("清晰实体")
+        case .glass: IadenteL10n.t("毛玻璃")
+        case .frosted: IadenteL10n.t("高斯柔化")
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .solid: IadenteL10n.t("最高文字对比度")
+        case .glass: IadenteL10n.t("平衡透明度与清晰度")
+        case .frosted: IadenteL10n.t("更明显的背景虚化")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .solid: "rectangle.fill"
+        case .glass: "square.on.square"
+        case .frosted: "aqi.medium"
+        }
+    }
+}
+
 extension Defaults.Keys {
     // General
+    static let appLanguage = Key<AppLanguage>("appLanguage", default: .system)
     static let launchAtLogin = Key<Bool>("launchAtLogin", default: false)
+    static let interfaceMaterialStyle = Key<InterfaceMaterialStyle>(
+        "interfaceMaterialStyle", default: .glass)
 
     // Status Icon
     static let batteryPercentageDisplayLocation = Key<PercentageDisplayLocation>(
         "batteryPercentageDisplayLocation", default: .nextToIcon)
+    static let menuBarReadoutStyle = Key<MenuBarReadoutStyle>(
+        "menuBarReadoutStyle", default: .batteryPercentage)
     static let showBatteryStateInStatusIcon = Key<Bool>(
         "showBatteryStateInStatusIcon", default: true)
 
@@ -56,6 +137,25 @@ extension Defaults.Keys {
     static let manageMagSafeLED = Key<Bool>("manageMagSafeLED", default: true)
     static let heatProtectionMagSafeLEDState = Key<MagSafeLEDState>(
         "heatProtectionMagSafeLEDState", default: MagSafeLEDState.blinkOrangeSlow)
+
+    // Charging - Advanced workflows
+    static let stopChargingWhenAppClosed = Key<Bool>(
+        "stopChargingWhenAppClosed", default: false)
+    static let stopChargingWhileSleeping = Key<Bool>(
+        "stopChargingWhileSleeping", default: true)
+    static let topUpActive = Key<Bool>("topUpActive", default: false)
+    static let manualPauseActive = Key<Bool>("manualPauseActive", default: false)
+    static let forcedDischargeTarget = Key<Int>("forcedDischargeTarget", default: 80)
+    static let calibrationStage = Key<String>("calibrationStage", default: "idle")
+    static let calibrationOriginalLimit = Key<Int>(
+        "calibrationOriginalLimit", default: 80)
+    static let calibrationLowLevel = Key<Int>("calibrationLowLevel", default: 10)
+    static let calibrationHoldMinutes = Key<Int>("calibrationHoldMinutes", default: 60)
+    static let calibrationHoldUntil = Key<Double>("calibrationHoldUntil", default: 0)
+
+    // Automation
+    static let scheduleTasksData = Key<Data>("scheduleTasksData", default: Data())
+
     // Advanced
     static let useHardwarePercentage = Key<Bool>("useHardwarePercentage", default: false)
 }

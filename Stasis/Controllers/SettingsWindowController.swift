@@ -6,25 +6,45 @@ import smc_power
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let capabilities: DeviceCapabilities
+    private let chargeManager: ChargeManager
 
-    init(capabilities: DeviceCapabilities) {
+    init(capabilities: DeviceCapabilities, chargeManager: ChargeManager) {
         self.capabilities = capabilities
+        self.chargeManager = chargeManager
         super.init()
     }
 
-    func showSettings() {
+    func showSettings(tab: SettingsTab = .general) {
         if let existingWindow = window {
-            existingWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
+            existingWindow.delegate = nil
+            existingWindow.close()
+            window = nil
         }
 
-        let settingsView = SettingsView(capabilities: capabilities)
+        let settingsView = SettingsView(
+            capabilities: capabilities,
+            chargeManager: chargeManager,
+            initialTab: tab
+        )
         let hostingController = NSHostingController(rootView: settingsView)
 
         let newWindow = NSWindow(contentViewController: hostingController)
-        newWindow.title = String(localized: "Stasis Settings")
-        newWindow.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        newWindow.title = IadenteL10n.t("iadente 设置", "iadente Settings")
+        newWindow.styleMask = [
+            .titled,
+            .closable,
+            .miniaturizable,
+            .resizable,
+            .fullSizeContentView,
+        ]
+        newWindow.titlebarAppearsTransparent = true
+        newWindow.titleVisibility = .hidden
+        newWindow.isOpaque = false
+        newWindow.backgroundColor = .clear
+        newWindow.appearance = NSAppearance(named: .darkAqua)
+        newWindow.contentView?.wantsLayer = true
+        newWindow.contentView?.layer?.cornerRadius = 14
+        newWindow.contentView?.layer?.masksToBounds = true
         newWindow.center()
         newWindow.setFrameAutosaveName("SettingsWindow")
         newWindow.isReleasedWhenClosed = false

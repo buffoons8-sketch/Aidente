@@ -1,19 +1,49 @@
 import Foundation
+import IadenteShared
 import Observation
 import os.log
 import smc_power
 
 enum XPCError: LocalizedError {
     case helperUnavailable
+    case timeout
     case commandFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .helperUnavailable:
-            "XPC helper is unavailable"
+            IadenteL10n.t("充电控制服务不可用", "Charging control service is unavailable")
+        case .timeout:
+            IadenteL10n.t(
+                "充电控制服务连接超时",
+                "Charging control service connection timed out"
+            )
         case .commandFailed(let message):
-            "Command failed: \(message)"
+            IadenteL10n.t(
+                "控制命令失败：\(message)",
+                "Control command failed: \(message)"
+            )
         }
+    }
+}
+
+private final class XPCCommandReply: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    init(_ continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ result: Result<Void, Error>) {
+        lock.lock()
+        guard let continuation else {
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+        continuation.resume(with: result)
     }
 }
 
@@ -31,7 +61,7 @@ class BatteryService {
     )
 
     private let xpcManager = SMCReaderConnection(
-        serviceName: "com.srimanachanta.stasis.helper"
+        serviceName: "com.iadente.app.reader"
     )
     private let ioKitService = IOKitService()
 
@@ -40,7 +70,7 @@ class BatteryService {
     private var delayedPollTask: Task<Void, Never>?
 
     private let logger = Logger(
-        subsystem: "com.srimanachanta.stasis",
+        subsystem: "com.iadente.app",
         category: "BatteryService"
     )
 
@@ -250,48 +280,72 @@ class BatteryService {
     }
 
     func manageBatteryCharging(enabled: Bool) async throws {
-        let helper = try getChargingHelper()
-        try await withCheckedThrowingContinuation { continuation in
-            helper.manageBatteryCharging(enabled: enabled) { success, errorMessage in
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(
-                        throwing: XPCError.commandFailed(errorMessage ?? "Unknown error"))
-                }
-            }
+        try await performControlCommand { helper, reply in
+            helper.manageBatteryCharging(enabled: enabled, reply: reply)
         }
     }
 
     func manageExternalPower(enabled: Bool) async throws {
-        let helper = try getChargingHelper()
-        try await withCheckedThrowingContinuation { continuation in
-            helper.manageExternalPower(enabled: enabled) { success, errorMessage in
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(
-                        throwing: XPCError.commandFailed(errorMessage ?? "Unknown error"))
-                }
-            }
+        try await performControlCommand { helper, reply in
+            helper.manageExternalPower(enabled: enabled, reply: reply)
         }
     }
 
     func manageMagsafeLED(target: MagSafeLEDState) async throws {
-        let helper = try getChargingHelper()
+        try await performControlCommand { helper, reply in
+            helper.manageMagsafeLED(target: target.rawValue, reply: reply)
+        }
+    }
+
+    func checkChargingHelper() async throws {
+        try await performControlCommand { helper, reply in
+            helper.ping(reply: reply)
+        }
+    }
+
+    private func performControlCommand(
+        _ command: @escaping @Sendable (
+            IadenteControlProtocol,
+            @escaping @Sendable (Bool, String?) -> Void
+        ) -> Void
+    ) async throws {
         try await withCheckedThrowingContinuation { continuation in
-            helper.manageMagsafeLED(target: target.rawValue) { success, errorMessage in
+            let commandReply = XPCCommandReply(continuation)
+            guard
+                let helper = ChargingHelperManager.shared.getHelper(errorHandler: { error in
+                    commandReply.finish(.failure(error))
+                })
+            else {
+                commandReply.finish(.failure(XPCError.helperUnavailable))
+                return
+            }
+
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 3) {
+                commandReply.finish(.failure(XPCError.timeout))
+            }
+
+            command(helper) { success, errorMessage in
                 if success {
-                    continuation.resume()
+                    commandReply.finish(.success(()))
                 } else {
-                    continuation.resume(
-                        throwing: XPCError.commandFailed(errorMessage ?? "Unknown error"))
+                    commandReply.finish(
+                        .failure(
+                            XPCError.commandFailed(
+                                errorMessage ?? IadenteL10n.t("未知错误", "Unknown error")
+                            )
+                        )
+                    )
                 }
             }
         }
     }
 
-    private func getChargingHelper() throws -> ChargingHelperProtocol {
+    func setResetOnDisconnect(_ enabled: Bool) throws {
+        let helper = try getChargingHelper()
+        helper.setResetOnDisconnect(enabled)
+    }
+
+    private func getChargingHelper() throws -> IadenteControlProtocol {
         let logger = self.logger
         guard
             let helper = ChargingHelperManager.shared.getHelper(errorHandler: { error in

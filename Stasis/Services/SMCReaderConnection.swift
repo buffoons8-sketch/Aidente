@@ -1,4 +1,5 @@
 import Foundation
+import IadenteShared
 import os.log
 
 @MainActor
@@ -6,7 +7,7 @@ class SMCReaderConnection {
     private var connection: NSXPCConnection?
     private let serviceName: String
     private let logger = Logger(
-        subsystem: "com.srimanachanta.stasis",
+        subsystem: "com.iadente.app",
         category: "SMCReaderConnection"
     )
 
@@ -19,17 +20,17 @@ class SMCReaderConnection {
         self.serviceName = serviceName
     }
 
-    func getHelper(errorHandler: @escaping @Sendable (Error) -> Void) -> HelperProtocol? {
+    func getHelper(errorHandler: @escaping @Sendable (Error) -> Void) -> IadenteReaderProtocol? {
         guard let connection else { return nil }
         return connection.remoteObjectProxyWithErrorHandler(errorHandler)
-            as? HelperProtocol
+            as? IadenteReaderProtocol
     }
 
     func connect() {
         logger.info("Setting up XPC connection to \(self.serviceName)")
         connection = NSXPCConnection(serviceName: serviceName)
         connection?.remoteObjectInterface = NSXPCInterface(
-            with: HelperProtocol.self
+            with: IadenteReaderProtocol.self
         )
 
         connection?.invalidationHandler = { [weak self] in

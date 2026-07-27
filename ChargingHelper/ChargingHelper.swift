@@ -1,18 +1,20 @@
 import Foundation
+import IadenteShared
 import os.log
 import smc_power
 
 private enum Constants {
-    static let subsystem = "com.srimanachanta.stasis.charging-helper"
+    static let subsystem = "com.iadente.app.control"
 }
 
-final class ChargingHelper: NSObject, ChargingHelperProtocol {
+final class ChargingHelper: NSObject, IadenteControlProtocol {
     private let battery: SMCBattery
     private let adapter: SMCAdapter
     private let logger = Logger(
         subsystem: Constants.subsystem,
         category: "ChargingHelper"
     )
+    private(set) var resetOnDisconnect = true
 
     init(battery: SMCBattery, adapter: SMCAdapter) {
         self.battery = battery
@@ -23,16 +25,25 @@ final class ChargingHelper: NSObject, ChargingHelperProtocol {
         )
     }
 
+    func ping(reply: @escaping @Sendable (Bool, String?) -> Void) {
+        reply(true, nil)
+    }
+
     func manageBatteryCharging(enabled: Bool, reply: @escaping @Sendable (Bool, String?) -> Void) {
         do {
             guard battery.capabilities.inhibitChargeControl else {
-                reply(false, "Charging control is not supported on this device")
+                reply(false, "当前设备不支持充电控制")
                 return
             }
             let currentlyInhibited = try battery.getChargingInhibited()
             if currentlyInhibited != !enabled {
                 try battery.setChargingInhibited(!enabled)
                 logger.debug("SMC set charging inhibited to: \(!enabled)")
+            }
+            let appliedValue = try battery.getChargingInhibited()
+            guard appliedValue == !enabled else {
+                reply(false, "SMC 没有接受充电暂停状态")
+                return
             }
             reply(true, nil)
         } catch {
@@ -44,13 +55,18 @@ final class ChargingHelper: NSObject, ChargingHelperProtocol {
     func manageExternalPower(enabled: Bool, reply: @escaping @Sendable (Bool, String?) -> Void) {
         do {
             guard battery.capabilities.forceDischargeControl else {
-                reply(false, "Adapter control is not supported on this device")
+                reply(false, "当前设备不支持适配器控制")
                 return
             }
             let currentlyDischarging = try battery.getForceDischarging()
             if currentlyDischarging != !enabled {
                 try battery.setForceDischarging(!enabled)
                 logger.debug("SMC set force discharging to: \(!enabled)")
+            }
+            let appliedValue = try battery.getForceDischarging()
+            guard appliedValue == !enabled else {
+                reply(false, "SMC 没有接受适配器控制状态")
+                return
             }
             reply(true, nil)
         } catch {
@@ -62,11 +78,11 @@ final class ChargingHelper: NSObject, ChargingHelperProtocol {
     func manageMagsafeLED(target: UInt8, reply: @escaping @Sendable (Bool, String?) -> Void) {
         do {
             guard adapter.capabilities.magSafeControl else {
-                reply(false, "MagSafe LED control is not supported on this device")
+                reply(false, "当前设备不支持 MagSafe 指示灯控制")
                 return
             }
             guard let ledState = MagSafeLEDState(rawValue: target) else {
-                reply(false, "Invalid MagSafe LED state: \(target)")
+                reply(false, "无效的 MagSafe 指示灯状态：\(target)")
                 return
             }
             let currentState = try adapter.getMagSafeLEDState()
@@ -79,6 +95,11 @@ final class ChargingHelper: NSObject, ChargingHelperProtocol {
             logger.error("manageMagsafeLED failed: \(error.localizedDescription)")
             reply(false, error.localizedDescription)
         }
+    }
+
+    func setResetOnDisconnect(_ enabled: Bool) {
+        resetOnDisconnect = enabled
+        logger.info("Reset on disconnect: \(enabled)")
     }
 
     func resetToDefaults() {
