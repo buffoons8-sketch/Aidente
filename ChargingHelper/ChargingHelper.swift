@@ -1,13 +1,13 @@
 import Foundation
-import IadenteShared
+import AidenteShared
 import os.log
 import smc_power
 
 private enum Constants {
-    static let subsystem = "com.iadente.app.control"
+    static let subsystem = "com.aidente.app.control"
 }
 
-final class ChargingHelper: NSObject, IadenteControlProtocol {
+final class ChargingHelper: NSObject, AidenteControlProtocol {
     private let battery: SMCBattery
     private let adapter: SMCAdapter
     private let logger = Logger(

@@ -1,12 +1,12 @@
 import Foundation
-import IadenteShared
+import AidenteShared
 import Darwin
 import Security
 import os.log
 import smc_power
 
 let logger = Logger(
-    subsystem: "com.iadente.app.control",
+    subsystem: "com.aidente.app.control",
     category: "ServiceDelegate"
 )
 
@@ -50,7 +50,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
         }
 
         newConnection.exportedInterface = NSXPCInterface(
-            with: (any IadenteControlProtocol).self
+            with: (any AidenteControlProtocol).self
         )
         newConnection.exportedObject = helper
 
@@ -81,15 +81,15 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
         }
 
         // The daemon and app executable are installed side-by-side in
-        // iadente.app/Contents/MacOS. Matching the kernel-reported executable
+        // Aidente.app/Contents/MacOS. Matching the kernel-reported executable
         // path prevents another process from connecting while still supporting
         // the ad-hoc signature used by local builds.
         guard let contentsURL = containingAppContentsURL(for: helperExecutableURL) else {
-            logger.error("Could not locate the containing iadente app bundle")
+            logger.error("Could not locate the containing Aidente app bundle")
             return false
         }
         let expectedAppExecutableURL = contentsURL
-            .appendingPathComponent("MacOS/iadente")
+            .appendingPathComponent("MacOS/Aidente")
             .resolvingSymlinksInPath()
             .standardizedFileURL
         guard clientExecutableURL == expectedAppExecutableURL else {
@@ -112,7 +112,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             // Exact executable-path matching is the compatibility fallback for
             // local ad-hoc builds, whose runtime validity check can fail even
             // though the enclosing app passes codesign verification.
-            logger.warning("Could not inspect client signature; accepting exact iadente executable")
+            logger.warning("Could not inspect client signature; accepting exact Aidente executable")
             return true
         }
 
@@ -122,7 +122,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             SecCSFlags(),
             &guestStaticCode
         ) == errSecSuccess, let guestStaticCode else {
-            logger.warning("Could not inspect static client signature; accepting exact iadente executable")
+            logger.warning("Could not inspect static client signature; accepting exact Aidente executable")
             return true
         }
 
@@ -132,7 +132,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             SecCSFlags(),
             &expectedStaticCode
         ) == errSecSuccess, let expectedStaticCode else {
-            logger.warning("Could not inspect installed app signature; accepting exact iadente executable")
+            logger.warning("Could not inspect installed app signature; accepting exact Aidente executable")
             return true
         }
 
@@ -140,11 +140,11 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             let guestIdentity = signingIdentity(for: guestStaticCode),
             let expectedIdentity = signingIdentity(for: expectedStaticCode)
         else {
-            logger.warning("Missing ad-hoc signing identity; accepting exact iadente executable")
+            logger.warning("Missing ad-hoc signing identity; accepting exact Aidente executable")
             return true
         }
 
-        return guestIdentity.identifier == "com.iadente.app"
+        return guestIdentity.identifier == "com.aidente.app"
             && guestIdentity.identifier == expectedIdentity.identifier
             && guestIdentity.cdHash == expectedIdentity.cdHash
     }
@@ -197,7 +197,7 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
 let helper = ChargingHelper(battery: battery, adapter: adapter)
 let delegate = ServiceDelegate(helper: helper)
 let listener = NSXPCListener(
-    machServiceName: "com.iadente.app.control"
+    machServiceName: "com.aidente.app.control"
 )
 listener.delegate = delegate
 listener.resume()

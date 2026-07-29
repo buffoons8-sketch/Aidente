@@ -7,7 +7,7 @@ module_dir="$build_dir/Modules"
 object_dir="$build_dir/Objects"
 module_cache_dir="$build_dir/ModuleCache"
 dist_dir="$project_dir/Dist"
-app_dir="$dist_dir/iadente.app"
+app_dir="$dist_dir/Aidente.app"
 sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk"
 target="arm64-apple-macosx14.0"
 
@@ -56,15 +56,15 @@ swiftc \
 swiftc \
     -parse-as-library \
     -emit-module \
-    -emit-module-path "$module_dir/IadenteShared.swiftmodule" \
+    -emit-module-path "$module_dir/AidenteShared.swiftmodule" \
     -emit-library \
     -static \
-    -module-name IadenteShared \
+    -module-name AidenteShared \
     "$project_dir"/Shared/*.swift \
     -sdk "$sdk" \
     -target "$target" \
     -module-cache-path "$module_cache_dir" \
-    -o "$build_dir/libIadenteShared.a"
+    -o "$build_dir/libAidenteShared.a"
 
 swiftc \
     -parse-as-library \
@@ -81,18 +81,18 @@ swiftc \
     -module-cache-path "$module_cache_dir" \
     -o "$build_dir/libsmc_power.a"
 
-app_sources=("$project_dir"/Stasis/**/*.swift)
+app_sources=("$project_dir"/Aidente/**/*.swift)
 
 swiftc \
     -parse-as-library \
     -swift-version 5 \
     -strict-concurrency=minimal \
-    -module-name iadente \
+    -module-name Aidente \
     "${app_sources[@]}" \
     -I "$module_dir" \
     -L "$build_dir" \
     -lDefaults \
-    -lIadenteShared \
+    -lAidenteShared \
     -lsmc_power \
     -lSMCKit \
     "$object_dir/smc.o" \
@@ -105,17 +105,17 @@ swiftc \
     -sdk "$sdk" \
     -target "$target" \
     -module-cache-path "$module_cache_dir" \
-    -o "$build_dir/iadente"
+    -o "$build_dir/Aidente"
 
 swiftc \
     -swift-version 5 \
     -strict-concurrency=minimal \
-    -module-name IadenteReader \
+    -module-name AidenteReader \
     "$project_dir/Helper/Helper.swift" \
     "$project_dir/Helper/main.swift" \
     -I "$module_dir" \
     -L "$build_dir" \
-    -lIadenteShared \
+    -lAidenteShared \
     -lsmc_power \
     -lSMCKit \
     "$object_dir/smc.o" \
@@ -125,17 +125,17 @@ swiftc \
     -sdk "$sdk" \
     -target "$target" \
     -module-cache-path "$module_cache_dir" \
-    -o "$build_dir/iadente-reader"
+    -o "$build_dir/AidenteReader"
 
 swiftc \
     -swift-version 5 \
     -strict-concurrency=minimal \
-    -module-name IadenteControl \
+    -module-name AidenteControl \
     "$project_dir/ChargingHelper/ChargingHelper.swift" \
     "$project_dir/ChargingHelper/main.swift" \
     -I "$module_dir" \
     -L "$build_dir" \
-    -lIadenteShared \
+    -lAidenteShared \
     -lsmc_power \
     -lSMCKit \
     "$object_dir/smc.o" \
@@ -146,40 +146,41 @@ swiftc \
     -sdk "$sdk" \
     -target "$target" \
     -module-cache-path "$module_cache_dir" \
-    -o "$build_dir/iadente-control"
+    -o "$build_dir/AidenteControl"
 
 if [[ -e "$app_dir" ]]; then
-    previous_app="$dist_dir/iadente.previous.$(date +%Y%m%d%H%M%S).app"
+    previous_app="$dist_dir/Aidente.previous.$(date +%Y%m%d%H%M%S).app"
     mv "$app_dir" "$previous_app"
 fi
 
 mkdir -p \
     "$app_dir/Contents/MacOS" \
     "$app_dir/Contents/Resources" \
-    "$app_dir/Contents/XPCServices/com.iadente.app.reader.xpc/Contents/MacOS" \
+    "$app_dir/Contents/XPCServices/com.aidente.app.reader.xpc/Contents/MacOS" \
     "$app_dir/Contents/Library/LaunchDaemons"
 
-cp "$build_dir/iadente" "$app_dir/Contents/MacOS/iadente"
+cp "$build_dir/Aidente" "$app_dir/Contents/MacOS/Aidente"
 cp "$project_dir/BuildSupport/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$project_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE.txt"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$app_dir/Contents/Resources/THIRD_PARTY_NOTICES.md"
 
-reader_dir="$app_dir/Contents/XPCServices/com.iadente.app.reader.xpc"
-cp "$build_dir/iadente-reader" "$reader_dir/Contents/MacOS/iadente-reader"
+reader_dir="$app_dir/Contents/XPCServices/com.aidente.app.reader.xpc"
+cp "$build_dir/AidenteReader" "$reader_dir/Contents/MacOS/AidenteReader"
 cp "$project_dir/BuildSupport/ReaderInfo.plist" "$reader_dir/Contents/Info.plist"
 
-cp "$build_dir/iadente-control" "$app_dir/Contents/MacOS/iadente-control"
+cp "$build_dir/AidenteControl" "$app_dir/Contents/MacOS/AidenteControl"
 # 0.2.0 registered this legacy relative path. Keep a signed compatibility
 # copy for one upgrade cycle so macOS background-item metadata cached from the
-# old build can still launch long enough for iadente to re-register it.
-cp "$build_dir/iadente-control" "$app_dir/Contents/Library/LaunchDaemons/iadente-control"
+# Keep a signed copy in the launch-daemon directory for macOS background-item
+# registration compatibility.
+cp "$build_dir/AidenteControl" "$app_dir/Contents/Library/LaunchDaemons/AidenteControl"
 cp \
-    "$project_dir/ChargingHelper/com.iadente.app.control.plist" \
-    "$app_dir/Contents/Library/LaunchDaemons/com.iadente.app.control.plist"
+    "$project_dir/ChargingHelper/com.aidente.app.control.plist" \
+    "$app_dir/Contents/Library/LaunchDaemons/com.aidente.app.control.plist"
 
-icon_source="$build_dir/iadente-icon-1024.png"
+icon_source="$build_dir/Aidente-icon-1024.png"
 icon_generator="$build_dir/generate-icon"
-iconset="$build_dir/iadente.iconset"
+iconset="$build_dir/Aidente.iconset"
 swiftc \
     "$project_dir/BuildSupport/generate_icon.swift" \
     -framework AppKit \
@@ -198,31 +199,31 @@ sips -z 256 256 "$icon_source" --out "$iconset/icon_256x256.png" >/dev/null
 sips -z 512 512 "$icon_source" --out "$iconset/icon_256x256@2x.png" >/dev/null
 sips -z 512 512 "$icon_source" --out "$iconset/icon_512x512.png" >/dev/null
 cp "$icon_source" "$iconset/icon_512x512@2x.png"
-iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/iadente.icns"
+iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/Aidente.icns"
 
 codesign \
     --force \
     --sign - \
     --timestamp=none \
-    --identifier com.iadente.app.control \
-    "$app_dir/Contents/MacOS/iadente-control"
+    --identifier com.aidente.app.control \
+    "$app_dir/Contents/MacOS/AidenteControl"
 codesign \
     --force \
     --sign - \
     --timestamp=none \
-    --identifier com.iadente.app.control \
-    "$app_dir/Contents/Library/LaunchDaemons/iadente-control"
+    --identifier com.aidente.app.control \
+    "$app_dir/Contents/Library/LaunchDaemons/AidenteControl"
 codesign \
     --force \
     --sign - \
     --timestamp=none \
-    --identifier com.iadente.app.reader \
+    --identifier com.aidente.app.reader \
     "$reader_dir"
 codesign \
     --force \
     --sign - \
     --timestamp=none \
-    --identifier com.iadente.app \
+    --identifier com.aidente.app \
     "$app_dir"
 
 codesign --verify --deep --strict --verbose=2 "$app_dir"

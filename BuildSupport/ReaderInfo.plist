@@ -5,19 +5,19 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>iadente-reader</string>
+    <string>AidenteReader</string>
     <key>CFBundleIdentifier</key>
-    <string>com.iadente.app.reader</string>
+    <string>com.aidente.app.reader</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>iadente-reader</string>
+    <string>AidenteReader</string>
     <key>CFBundlePackageType</key>
     <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.5.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>10</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>XPCService</key>

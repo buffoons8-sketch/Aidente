@@ -1,13 +1,14 @@
-# iadente
+# Aidente
 
-iadente is an independent, open-source macOS menu bar app for Apple Silicon
+Aidente is an independent, open-source macOS menu bar app for Apple Silicon
 MacBooks. It monitors battery and power data and can manage low-level charging
 controls through an explicitly approved privileged helper.
 
-Version 0.4.1 follows the macOS system language by default and also offers
-explicit Chinese/English choices. It merges live battery percentage and
-charge-limit adjustment into one interactive battery track, and uses an
-adaptive power-flow diagram for live power data.
+Version 0.5.0 completes the Aidente rename, follows the macOS system language
+by default, and also offers explicit Chinese/English choices. It merges live
+battery percentage and charge-limit adjustment into one interactive battery
+track, uses an adaptive power-flow diagram for live power data, and resolves
+app names from macOS bundle metadata to avoid garbled energy-ranking labels.
 
 This project does not contain AlDente Pro code, assets, activation logic, or
 modified binaries. It implements similar battery-care workflows from public
@@ -45,11 +46,14 @@ disabled rather than forced.
 - Scheduled charge limits, Top Up, calibration, pause, and discharge tasks
 - Login launch and customizable menu-bar/dashboard display
 - Follow-system language mode plus instant Chinese/English switching
+- Optional Liquid Glass appearance that adapts to macOS 26/27 system materials
+  and falls back to a compatible translucent effect on older macOS versions
+- Unicode-safe live energy app names sourced from macOS application metadata
 - Apple Shortcuts-compatible URL actions
 
 ## Install
 
-Drag `iadente.app` to `/Applications`, open it, then enable charge management in
+Drag `Aidente.app` to `/Applications`, open it, then enable charge management in
 Settings → Charging. macOS may ask you to approve the background helper in
 System Settings → General → Login Items.
 
@@ -61,12 +65,12 @@ blocks the first launch, right-click the app and choose Open.
 Use Shortcuts → Open URLs with one of:
 
 ```text
-iadente://set-limit?value=80
-iadente://top-up
-iadente://calibrate
-iadente://pause
-iadente://discharge?value=70
-iadente://resume
+aidente://set-limit?value=80
+aidente://top-up
+aidente://calibrate
+aidente://pause
+aidente://discharge?value=70
+aidente://resume
 ```
 
 ## Build from source
@@ -79,7 +83,7 @@ chmod +x BuildSupport/build_app.sh
 BuildSupport/build_app.sh
 ```
 
-The output is `Dist/iadente.app`.
+The output is `Dist/Aidente.app`.
 
 ## Safety and uninstall
 
@@ -92,8 +96,8 @@ versions. Use at your own risk and keep a charger available during calibration.
 
 ## License and attribution
 
-iadente is licensed under GPL-3.0 because it is based on the GPL-3.0 Stasis
+Aidente is licensed under GPL-3.0 because it is based on the GPL-3.0 Stasis
 project. See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
 
-AlDente is a trademark of its respective owner. iadente is independent and is
+AlDente is a trademark of its respective owner. Aidente is independent and is
 not affiliated with, endorsed by, or distributed by AppHouseKitchen.

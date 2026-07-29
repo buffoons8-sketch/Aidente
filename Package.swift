@@ -3,14 +3,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "iadente",
+    name: "Aidente",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "iadente", targets: ["iadente"]),
-        .executable(name: "iadente-reader", targets: ["IadenteReader"]),
-        .executable(name: "iadente-control", targets: ["IadenteControl"]),
+        .executable(name: "Aidente", targets: ["Aidente"]),
+        .executable(name: "AidenteReader", targets: ["AidenteReader"]),
+        .executable(name: "AidenteControl", targets: ["AidenteControl"]),
     ],
     dependencies: [
         .package(path: "Vendor/Defaults"),
@@ -18,7 +18,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "IadenteShared",
+            name: "AidenteShared",
             path: "Shared"
         ),
         .target(
@@ -29,9 +29,9 @@ let package = Package(
             path: "SMCPower"
         ),
         .executableTarget(
-            name: "IadenteReader",
+            name: "AidenteReader",
             dependencies: [
-                "IadenteShared",
+                "AidenteShared",
                 "smc_power",
             ],
             path: "Helper",
@@ -41,25 +41,25 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "IadenteControl",
+            name: "AidenteControl",
             dependencies: [
-                "IadenteShared",
+                "AidenteShared",
                 "smc_power",
             ],
             path: "ChargingHelper",
             exclude: [
                 "ChargingHelperProtocol.swift",
-                "com.iadente.app.control.plist",
+                "com.aidente.app.control.plist",
             ]
         ),
         .executableTarget(
-            name: "iadente",
+            name: "Aidente",
             dependencies: [
-                "IadenteShared",
+                "AidenteShared",
                 "smc_power",
                 .product(name: "Defaults", package: "Defaults"),
             ],
-            path: "Stasis",
+            path: "Aidente",
             exclude: [
                 "Assets.xcassets",
                 "L10n",

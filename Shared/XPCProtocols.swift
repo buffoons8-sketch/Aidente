@@ -1,6 +1,6 @@
 import Foundation
 
-@objc public protocol IadenteReaderProtocol {
+@objc public protocol AidenteReaderProtocol {
     func readBatteryMetrics(
         reply: @escaping @Sendable (Double, Double, Double) -> Void
     )
@@ -12,7 +12,7 @@ import Foundation
     )
 }
 
-@objc public protocol IadenteControlProtocol {
+@objc public protocol AidenteControlProtocol {
     func ping(
         reply: @escaping @Sendable (Bool, String?) -> Void
     )
