@@ -47,6 +47,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         IOObjectRelease(batteryIOService)
 
+        if Defaults[.launchAtLogin]
+            && !LaunchAtLoginService.shared.isEnabled
+        {
+            LaunchAtLoginService.shared.setLaunchAtLogin(true)
+        }
+
         Task {
             ensureChargingHelperRegistration()
             await setupServices()
