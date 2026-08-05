@@ -102,6 +102,21 @@ final class ChargingHelper: NSObject, AidenteControlProtocol {
         logger.info("Reset on disconnect: \(enabled)")
     }
 
+    // Preserving state across disconnects is only meant to keep the charge
+    // pause. A preserved force discharge would drain the battery to empty
+    // with the adapter plugged in, so it is always cleared.
+    func clearForceDischarge() {
+        guard battery.capabilities.forceDischargeControl else { return }
+        do {
+            if try battery.getForceDischarging() {
+                try battery.setForceDischarging(false)
+                logger.info("Force discharge cleared")
+            }
+        } catch {
+            logger.error("clearForceDischarge failed: \(error.localizedDescription)")
+        }
+    }
+
     func resetToDefaults() {
         do {
             if battery.capabilities.inhibitChargeControl {

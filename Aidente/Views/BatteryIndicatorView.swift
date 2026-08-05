@@ -226,7 +226,7 @@ struct BatteryIndicatorView: View {
 }
 
 private struct InsidePercentageFramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect?
+    static let defaultValue: CGRect? = nil
     static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
         value = nextValue() ?? value
     }

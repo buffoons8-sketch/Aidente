@@ -522,7 +522,9 @@ class ChargeManager {
         guard ChargingHelperManager.shared.isInstalled else { return }
         let capabilities = batteryService.deviceCapabilities
         if capabilities.chargingControl {
-            setCharging(enabled: true)
+            // Restoring defaults after unplugging is not a charging-state
+            // change the user should be notified about.
+            setCharging(enabled: true, notify: false)
         }
         if capabilities.adapterControl {
             setAdapter(enabled: true)
@@ -532,7 +534,7 @@ class ChargeManager {
         }
     }
 
-    private func setCharging(enabled: Bool, reason: String? = nil) {
+    private func setCharging(enabled: Bool, reason: String? = nil, notify: Bool = true) {
         chargingCommandGeneration += 1
         let commandGeneration = chargingCommandGeneration
         logger.info("Setting charging: \(enabled)")
@@ -543,7 +545,9 @@ class ChargeManager {
                 serviceControlError = nil
                 chargingControlError = nil
                 batteryService.scheduleSinglePoll()
-                sendChargingStateNotification(charging: enabled, reason: reason)
+                if notify {
+                    sendChargingStateNotification(charging: enabled, reason: reason)
+                }
                 if !enabled {
                     try? await Task.sleep(for: .seconds(6))
                     guard commandGeneration == chargingCommandGeneration else { return }
@@ -742,9 +746,17 @@ class ChargeManager {
         }
     }
 
-    func prepareForSleep() {
+    func prepareForSleep() async {
         isSystemSleeping = true
         evaluate(controlState: batteryService.controlState)
+        guard Defaults[.manageCharging],
+            Defaults[.stopChargingWhileSleeping],
+            batteryService.controlState.adapterConnected,
+            batteryService.deviceCapabilities.chargingControl
+        else { return }
+        // evaluate() applies the pause in a fire-and-forget task; await a direct
+        // command so the write reaches the SMC before sleep is acknowledged.
+        try? await batteryService.manageBatteryCharging(enabled: false)
     }
 
     func resumeFromSleep() {

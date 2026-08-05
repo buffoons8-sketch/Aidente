@@ -2,7 +2,7 @@ import Foundation
 import ServiceManagement
 import os.log
 
-class LaunchAtLoginService {
+final class LaunchAtLoginService: Sendable {
     static let shared = LaunchAtLoginService()
 
     private let logger = Logger(

@@ -2,6 +2,7 @@ import AppKit
 import Defaults
 import Darwin
 import IOKit
+import IOKit.pwr_mgt
 import Observation
 import UserNotifications
 
@@ -12,6 +13,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var viewModel: MenuViewModel!
     private var chargeManager: ChargeManager!
     private var settingsWindowController: SettingsWindowController!
+    private var powerNotificationPort: IONotificationPortRef?
+    private var powerNotifier: io_object_t = 0
+    private var rootPowerDomainPort: io_connect_t = 0
+
+    // IOMessage.h defines these via the iokit_common_msg() function-like
+    // macro, which Swift cannot import.
+    private static let messageCanSystemSleep: UInt32 = 0xE000_0270
+    private static let messageSystemWillSleep: UInt32 = 0xE000_0280
+    private static let messageSystemHasPoweredOn: UInt32 = 0xE000_0300
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AidenteMigration.migrateLegacyPreferencesIfNeeded()
@@ -116,6 +126,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observePowerEvents() {
+        // IORegisterForSystemPower lets the app hold off sleep until the
+        // charging pause has actually reached the SMC; NSWorkspace's
+        // willSleepNotification offers no such acknowledgment.
+        let refCon = Unmanaged.passUnretained(self).toOpaque()
+        rootPowerDomainPort = IORegisterForSystemPower(
+            refCon,
+            &powerNotificationPort,
+            { refCon, _, messageType, messageArgument in
+                guard let refCon else { return }
+                let delegate = Unmanaged<AppDelegate>.fromOpaque(refCon)
+                    .takeUnretainedValue()
+                MainActor.assumeIsolated {
+                    delegate.handlePowerMessage(messageType, argument: messageArgument)
+                }
+            },
+            &powerNotifier
+        )
+        guard rootPowerDomainPort != 0, let powerNotificationPort else {
+            observeWorkspacePowerEvents()
+            return
+        }
+        IONotificationPortSetDispatchQueue(powerNotificationPort, DispatchQueue.main)
+    }
+
+    private func handlePowerMessage(
+        _ messageType: UInt32,
+        argument: UnsafeMutableRawPointer?
+    ) {
+        let notificationID = Int(bitPattern: argument)
+        switch messageType {
+        case Self.messageCanSystemSleep:
+            IOAllowPowerChange(rootPowerDomainPort, notificationID)
+        case Self.messageSystemWillSleep:
+            Task {
+                await chargeManager.prepareForSleep()
+                IOAllowPowerChange(rootPowerDomainPort, notificationID)
+            }
+        case Self.messageSystemHasPoweredOn:
+            chargeManager.resumeFromSleep()
+        default:
+            break
+        }
+    }
+
+    private func observeWorkspacePowerEvents() {
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(handleSystemWillSleep(_:)),
@@ -131,7 +186,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleSystemWillSleep(_ notification: Notification) {
-        chargeManager.prepareForSleep()
+        Task {
+            await chargeManager.prepareForSleep()
+        }
     }
 
     @objc private func handleSystemDidWake(_ notification: Notification) {
@@ -158,5 +215,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         chargeManager.stop()
         batteryService.stop()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        if rootPowerDomainPort != 0 {
+            IODeregisterForSystemPower(&powerNotifier)
+            IOServiceClose(rootPowerDomainPort)
+            rootPowerDomainPort = 0
+        }
+        if let powerNotificationPort {
+            IONotificationPortDestroy(powerNotificationPort)
+            self.powerNotificationPort = nil
+        }
     }
 }

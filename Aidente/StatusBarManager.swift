@@ -3,11 +3,12 @@ import Defaults
 import SwiftUI
 
 @MainActor
-final class StatusBarManager: NSObject, NSPopoverDelegate {
+final class StatusBarManager: NSObject {
     private let statusItem: NSStatusItem
     private let viewModel: MenuViewModel
     private let settingsWindowController: SettingsWindowController
-    private let popover = NSPopover()
+    private var dashboardPanel: NSPanel?
+    private var dismissMonitors: [Any] = []
     private var displayObservation: Task<Void, Never>?
     private var previewWindow: NSWindow?
 
@@ -22,22 +23,33 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
         )
         super.init()
 
-        configurePopover()
         setupPersistentHostingView()
         startDisplayObservation()
     }
 
-    private func configurePopover() {
-        let rootView = makeDashboardRootView()
+    // A fixed-position panel instead of an NSPopover: popovers track their
+    // anchor, so menu bar managers like Ice that relocate status items to
+    // hide them would drag the open popover along (breaking an in-progress
+    // charge-limit drag) or dismiss it outright.
+    private func makeDashboardPanel() -> NSPanel {
+        let hostingController = NSHostingController(rootView: makeDashboardRootView())
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.cornerRadius = 15
+        hostingController.view.layer?.masksToBounds = true
 
-        popover.contentSize = NSSize(width: 408, height: 720)
-        popover.behavior = .transient
-        popover.animates = true
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: rootView)
-        popover.contentViewController?.view.wantsLayer = true
-        popover.contentViewController?.view.layer?.cornerRadius = 15
-        popover.contentViewController?.view.layer?.masksToBounds = true
+        let panel = AidenteFloatingPanel(contentViewController: hostingController)
+        panel.styleMask = [.borderless, .nonactivatingPanel]
+        panel.setContentSize(NSSize(width: 408, height: 720))
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.animationBehavior = .utilityWindow
+        return panel
     }
 
     private func makeDashboardRootView() -> DashboardPopoverView {
@@ -45,7 +57,7 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
             viewModel: viewModel,
             onOpenSettings: { [weak self] tab in
                 guard let self else { return }
-                self.popover.performClose(nil)
+                self.closeDashboard()
                 self.previewWindow?.close()
                 self.settingsWindowController.showSettings(tab: tab)
             },
@@ -53,6 +65,82 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
                 self?.viewModel.quit()
             }
         )
+    }
+
+    private func showDashboard() {
+        guard let button = statusItem.button else { return }
+        let panel = dashboardPanel ?? makeDashboardPanel()
+        dashboardPanel = panel
+
+        let size = panel.frame.size
+        if let buttonWindow = button.window {
+            let buttonFrame = buttonWindow.convertToScreen(
+                button.convert(button.bounds, to: nil)
+            )
+            let screenFrame =
+                (buttonWindow.screen ?? NSScreen.main)?.visibleFrame
+                ?? buttonFrame
+            let x = min(
+                max(buttonFrame.midX - size.width / 2, screenFrame.minX + 8),
+                screenFrame.maxX - size.width - 8
+            )
+            let y = max(buttonFrame.minY - size.height - 6, screenFrame.minY)
+            panel.setFrameOrigin(NSPoint(x: x, y: y))
+        }
+
+        viewModel.menuWillOpen()
+        panel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
+        installDismissMonitors()
+    }
+
+    private func closeDashboard() {
+        removeDismissMonitors()
+        guard let panel = dashboardPanel, panel.isVisible else { return }
+        panel.orderOut(nil)
+        viewModel.menuDidClose()
+    }
+
+    private func installDismissMonitors() {
+        guard dismissMonitors.isEmpty else { return }
+
+        let globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { _ in
+            Task { @MainActor [weak self] in
+                self?.closeDashboard()
+            }
+        }
+
+        let localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .keyDown]
+        ) { event in
+            let consumeEvent = MainActor.assumeIsolated { [weak self] () -> Bool in
+                guard let self else { return false }
+                if event.type == .keyDown {
+                    guard event.keyCode == 53 else { return false }
+                    self.closeDashboard()
+                    return true
+                }
+                // Clicks on the status item itself are left to the button's
+                // toggle action so they don't close-then-reopen the panel.
+                if event.window == self.dashboardPanel
+                    || event.window == self.statusItem.button?.window
+                {
+                    return false
+                }
+                self.closeDashboard()
+                return false
+            }
+            return consumeEvent ? nil : event
+        }
+
+        dismissMonitors = [globalMonitor, localMonitor].compactMap { $0 }
+    }
+
+    private func removeDismissMonitors() {
+        dismissMonitors.forEach { NSEvent.removeMonitor($0) }
+        dismissMonitors.removeAll()
     }
 
     private func setupPersistentHostingView() {
@@ -109,37 +197,24 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
-        if popover.isShown {
-            popover.performClose(sender)
-            return
+        if let panel = dashboardPanel, panel.isVisible {
+            closeDashboard()
+        } else {
+            showDashboard()
         }
-
-        viewModel.menuWillOpen()
-        popover.show(
-            relativeTo: sender.bounds,
-            of: sender,
-            preferredEdge: .minY
-        )
-        popover.contentViewController?.view.window?.makeKey()
     }
 
     func showPopoverForPreview() {
-        guard let button = statusItem.button, !popover.isShown else { return }
+        guard dashboardPanel?.isVisible != true else { return }
         NSApp.activate(ignoringOtherApps: true)
-        viewModel.menuWillOpen()
-        popover.show(
-            relativeTo: button.bounds,
-            of: button,
-            preferredEdge: .minY
-        )
-        popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
+        showDashboard()
     }
 
     func showWindowForPreview() {
         guard previewWindow == nil else { return }
 
         let hostingController = NSHostingController(rootView: makeDashboardRootView())
-        let panel = AidentePreviewPanel(contentViewController: hostingController)
+        let panel = AidenteFloatingPanel(contentViewController: hostingController)
         panel.styleMask = [.borderless]
         panel.setContentSize(NSSize(width: 408, height: 720))
         panel.isOpaque = false
@@ -172,16 +247,12 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
         panel.orderFrontRegardless()
     }
 
-    func popoverDidClose(_ notification: Notification) {
-        viewModel.menuDidClose()
-    }
-
     deinit {
         displayObservation?.cancel()
     }
 }
 
-private final class AidentePreviewPanel: NSPanel {
+private final class AidenteFloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
