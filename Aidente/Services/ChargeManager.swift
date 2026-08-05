@@ -742,9 +742,17 @@ class ChargeManager {
         }
     }
 
-    func prepareForSleep() {
+    func prepareForSleep() async {
         isSystemSleeping = true
         evaluate(controlState: batteryService.controlState)
+        guard Defaults[.manageCharging],
+            Defaults[.stopChargingWhileSleeping],
+            batteryService.controlState.adapterConnected,
+            batteryService.deviceCapabilities.chargingControl
+        else { return }
+        // evaluate() applies the pause in a fire-and-forget task; await a direct
+        // command so the write reaches the SMC before sleep is acknowledged.
+        try? await batteryService.manageBatteryCharging(enabled: false)
     }
 
     func resumeFromSleep() {
