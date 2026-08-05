@@ -62,7 +62,8 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
                 logger.info("XPC connection invalidated, resetting SMC keys to defaults")
                 self.helper.resetToDefaults()
             } else {
-                logger.info("XPC connection invalidated, preserving the current SMC state")
+                logger.info("XPC connection invalidated, preserving the charge pause state")
+                self.helper.clearForceDischarge()
             }
             exit(0)
         }
