@@ -172,7 +172,11 @@ class BatteryService {
         }
 
         return await withCheckedContinuation { continuation in
-            helper.readBatteryMetrics { batteryVoltage, batteryCurrent, batteryPower in
+            helper.readBatteryMetrics { success, batteryVoltage, batteryCurrent, batteryPower in
+                guard success else {
+                    continuation.resume(returning: nil)
+                    return
+                }
                 continuation.resume(
                     returning: SMCBatteryReading(
                         batteryVoltage: batteryVoltage,
@@ -197,7 +201,11 @@ class BatteryService {
         }
 
         return await withCheckedContinuation { continuation in
-            helper.readAdapterMetrics { adapterVoltage, adapterCurrent, adapterPower in
+            helper.readAdapterMetrics { success, adapterVoltage, adapterCurrent, adapterPower in
+                guard success else {
+                    continuation.resume(returning: nil)
+                    return
+                }
                 continuation.resume(
                     returning: SMCAdapterReading(
                         adapterVoltage: adapterVoltage,
@@ -214,7 +222,7 @@ class BatteryService {
         async let adapterData = fetchSMCAdapterData()
 
         guard let batteryReading = await batteryData, let adapterReading = await adapterData else {
-            logger.error("No helper available for SMC battery polling")
+            logger.error("SMC poll failed; keeping last known metrics")
             return
         }
 
@@ -320,7 +328,8 @@ class BatteryService {
                 return
             }
 
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 3) {
+            // Generous enough to cover launchd cold-starting the helper daemon.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 10) {
                 commandReply.finish(.failure(XPCError.timeout))
             }
 

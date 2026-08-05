@@ -14,22 +14,22 @@ final class Helper: NSObject, AidenteReaderProtocol {
     )
 
     func readBatteryMetrics(
-        reply: @escaping @Sendable (Double, Double, Double) -> Void
+        reply: @escaping @Sendable (Bool, Double, Double, Double) -> Void
     ) {
         do {
             let batteryVoltage = try SMCBattery.getVoltage()
             let batteryCurrent = try SMCBattery.getCurrent()
             let batteryPower = batteryVoltage * batteryCurrent
 
-            reply(batteryVoltage, batteryCurrent, batteryPower)
+            reply(true, batteryVoltage, batteryCurrent, batteryPower)
         } catch {
             logger.error("SMC battery read failed: \(error.localizedDescription)")
-            reply(0, 0, 0)
+            reply(false, 0, 0, 0)
         }
     }
 
     func readAdapterMetrics(
-        reply: @escaping @Sendable (Double, Double, Double) -> Void
+        reply: @escaping @Sendable (Bool, Double, Double, Double) -> Void
     ) {
         do {
             var adapterVoltage = try SMCAdapter.getVoltage()
@@ -40,10 +40,10 @@ final class Helper: NSObject, AidenteReaderProtocol {
 
             let adapterPower = adapterVoltage * adapterCurrent
 
-            reply(adapterVoltage, adapterCurrent, adapterPower)
+            reply(true, adapterVoltage, adapterCurrent, adapterPower)
         } catch {
             logger.error("SMC adapter read failed: \(error.localizedDescription)")
-            reply(0, 0, 0)
+            reply(false, 0, 0, 0)
         }
     }
 
