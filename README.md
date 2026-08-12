@@ -4,7 +4,7 @@ Aidente is an independent, open-source macOS menu bar app for Apple Silicon
 MacBooks. It monitors battery and power data and can manage low-level charging
 controls through an explicitly approved privileged helper.
 
-Version 0.8.4 improves the visibility of live voltage and current readings by
+Version 6.0 improves the visibility of live voltage and current readings by
 using a brighter source-matched color and stronger typography in the power-flow
 diagram. It also includes the diagnostics center, long-term battery-capacity
 history, active charger specification, and direct dashboard protection toggles
