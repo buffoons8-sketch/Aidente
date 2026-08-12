@@ -17,6 +17,7 @@ struct DashboardPopoverView: View {
 
     @State private var chargeLimitDraft: Double = 80
     @State private var isAdjustingChargeLimit = false
+    @State private var capacityHistoryRange: CapacityHistoryRange = .all
 
     var body: some View {
         ZStack {
@@ -33,8 +34,9 @@ struct DashboardPopoverView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         statusHero
-                        batterySummary
                         powerSummary
+                        batterySummary
+                        capacityHistory
                         energyAppRanking
                         careActions
                         automaticProtection
@@ -117,8 +119,8 @@ struct DashboardPopoverView: View {
                     Text(
                         viewModel.adapterConnected
                             ? AidenteL10n.t(
-                                "适配器 \(viewModel.externalInputText)",
-                                "Adapter \(viewModel.externalInputText)"
+                                "充电器规格 \(viewModel.adapterSpecificationText)",
+                                "Charger \(viewModel.adapterSpecificationText)"
                             )
                             : AidenteL10n.t(
                                 "电池 \(viewModel.internalInputText)",
@@ -242,8 +244,92 @@ struct DashboardPopoverView: View {
                     isCharging: viewModel.isCharging,
                     adapterPower: viewModel.adapterPower,
                     systemPower: viewModel.systemPower,
-                    batteryPower: viewModel.batteryPower
+                    batteryPower: viewModel.batteryPower,
+                    adapterElectricalText: viewModel.adapterElectricalText,
+                    batteryElectricalText: viewModel.batteryElectricalText
                 )
+            }
+        }
+    }
+
+    private var capacityHistory: some View {
+        PopoverCompactCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Label(
+                        AidenteL10n.t("容量与寿命趋势"),
+                        systemImage: "chart.xyaxis.line"
+                    )
+                    .font(.system(size: 13, weight: .semibold))
+
+                    Spacer()
+
+                    Picker("", selection: $capacityHistoryRange) {
+                        ForEach(CapacityHistoryRange.allCases) { range in
+                            Text(range.title).tag(range)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .controlSize(.mini)
+                    .frame(width: 146)
+                }
+
+                Label(
+                    viewModel.batteryHistoryTrackingText,
+                    systemImage: "calendar.badge.clock"
+                )
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.secondary)
+
+                HStack(spacing: 0) {
+                    CompactMetric(
+                        title: "当前容量",
+                        value: viewModel.currentCapacityText,
+                        tint: AidenteTheme.jade,
+                        compact: true
+                    )
+                    CompactDivider()
+                    CompactMetric(
+                        title: "估算满充",
+                        value: viewModel.estimatedFullCapacityText,
+                        tint: AidenteTheme.ocean,
+                        compact: true
+                    )
+                    CompactDivider()
+                    CompactMetric(
+                        title: "设计容量",
+                        value: viewModel.designCapacityText,
+                        tint: AidenteTheme.violet,
+                        compact: true
+                    )
+                }
+
+                BatteryCapacityChartView(
+                    samples: viewModel.batteryCapacityHistory,
+                    range: capacityHistoryRange
+                )
+
+                HStack(spacing: 12) {
+                    CapacityLegend(title: "当前容量", tint: AidenteTheme.jade)
+                    CapacityLegend(title: "估算满充", tint: AidenteTheme.ocean)
+                    CapacityLegend(
+                        title: "设计容量",
+                        tint: AidenteTheme.violet,
+                        dashed: true
+                    )
+                    Spacer(minLength: 0)
+                }
+
+                Text(
+                    AidenteL10n.t(
+                        "容量数据由 macOS 根据充放电状态估算，仅供电池养护参考。",
+                        "Capacity values are estimated by macOS from charge and discharge data and are for battery-care reference only."
+                    )
+                )
+                .font(.system(size: 9.5))
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -367,15 +453,18 @@ struct DashboardPopoverView: View {
                 HStack(spacing: 7) {
                     ProtectionPill(
                         title: "高温",
-                        isEnabled: heatProtectionEnabled
+                        isEnabled: heatProtectionEnabled,
+                        action: { heatProtectionEnabled.toggle() }
                     )
                     ProtectionPill(
                         title: "睡眠暂停",
-                        isEnabled: sleepPauseEnabled
+                        isEnabled: sleepPauseEnabled,
+                        action: { sleepPauseEnabled.toggle() }
                     )
                     ProtectionPill(
                         title: "巡航",
-                        isEnabled: sailingModeEnabled
+                        isEnabled: sailingModeEnabled,
+                        action: { sailingModeEnabled.toggle() }
                     )
                 }
             }
@@ -618,16 +707,18 @@ private struct CompactPowerFlowDiagram: View {
     let adapterPower: Double
     let systemPower: Double
     let batteryPower: Double
+    let adapterElectricalText: String
+    let batteryElectricalText: String
 
-    private let nodeWidth: CGFloat = 108
-    private let nodeHeight: CGFloat = 46
+    private let nodeWidth: CGFloat = 124
+    private let nodeHeight: CGFloat = 54
 
     private var diagramHeight: CGFloat {
         switch diagramMode {
         case .adapterSplit, .sourcesMerge:
-            120
+            136
         case .adapterOnly, .batteryOnly:
-            64
+            68
         }
     }
 
@@ -657,6 +748,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "适配器",
                         icon: "powerplug.fill",
                         power: adapterPower,
+                        electricalText: adapterElectricalText,
                         tint: AidenteTheme.amber
                     )
                     .position(x: leftX, y: middleY)
@@ -665,6 +757,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "电池充入",
                         icon: isCharging ? "battery.100.bolt" : "battery.100",
                         power: batteryPower,
+                        electricalText: batteryElectricalText,
                         tint: AidenteTheme.jade
                     )
                     .position(x: rightX, y: topY)
@@ -673,6 +766,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "系统使用",
                         icon: "laptopcomputer",
                         power: systemPower,
+                        electricalText: nil,
                         tint: AidenteTheme.ocean
                     )
                     .position(x: rightX, y: bottomY)
@@ -682,6 +776,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "电池输出",
                         icon: "battery.100",
                         power: batteryPower,
+                        electricalText: batteryElectricalText,
                         tint: AidenteTheme.jade
                     )
                     .position(x: leftX, y: topY)
@@ -690,6 +785,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "适配器",
                         icon: "powerplug.fill",
                         power: adapterPower,
+                        electricalText: adapterElectricalText,
                         tint: AidenteTheme.amber
                     )
                     .position(x: leftX, y: bottomY)
@@ -698,6 +794,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "系统使用",
                         icon: "laptopcomputer",
                         power: systemPower,
+                        electricalText: nil,
                         tint: AidenteTheme.ocean
                     )
                     .position(x: rightX, y: middleY)
@@ -707,6 +804,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "适配器",
                         icon: "powerplug.fill",
                         power: adapterPower,
+                        electricalText: adapterElectricalText,
                         tint: AidenteTheme.amber
                     )
                     .position(x: leftX, y: middleY)
@@ -715,6 +813,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "系统使用",
                         icon: "laptopcomputer",
                         power: systemPower,
+                        electricalText: nil,
                         tint: AidenteTheme.ocean
                     )
                     .position(x: rightX, y: middleY)
@@ -724,6 +823,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "电池输出",
                         icon: "battery.100",
                         power: batteryPower,
+                        electricalText: batteryElectricalText,
                         tint: AidenteTheme.jade
                     )
                     .position(x: leftX, y: middleY)
@@ -732,6 +832,7 @@ private struct CompactPowerFlowDiagram: View {
                         title: "系统使用",
                         icon: "laptopcomputer",
                         power: systemPower,
+                        electricalText: nil,
                         tint: AidenteTheme.ocean
                     )
                     .position(x: rightX, y: middleY)
@@ -743,8 +844,8 @@ private struct CompactPowerFlowDiagram: View {
         .accessibilityLabel(AidenteL10n.t("实时功率分流图", "Live Power Flow Diagram"))
         .accessibilityValue(
             AidenteL10n.t(
-                "适配器 \(formatted(adapterPower))，系统 \(formatted(systemPower))，电池 \(formatted(batteryPower))",
-                "Adapter \(formatted(adapterPower)), system \(formatted(systemPower)), battery \(formatted(batteryPower))"
+                "适配器 \(formatted(adapterPower))，\(adapterElectricalText)；系统 \(formatted(systemPower))；电池 \(formatted(batteryPower))，\(batteryElectricalText)",
+                "Adapter \(formatted(adapterPower)), \(adapterElectricalText); system \(formatted(systemPower)); battery \(formatted(batteryPower)), \(batteryElectricalText)"
             )
         )
     }
@@ -890,6 +991,7 @@ private struct PowerFlowNode: View {
     let title: String
     let icon: String
     let power: Double
+    let electricalText: String?
     let tint: Color
 
     var body: some View {
@@ -911,12 +1013,21 @@ private struct PowerFlowNode: View {
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
+
+                if let electricalText {
+                    Text(electricalText)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(tint.opacity(0.92))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
+                }
             }
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 8)
-        .frame(width: 108, height: 46)
+        .frame(width: 124, height: 54)
         .background {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(.black.opacity(0.19))
@@ -991,6 +1102,33 @@ private struct CompactMetric: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct CapacityLegend: View {
+    @Default(.appLanguage) private var appLanguage
+
+    let title: String
+    let tint: Color
+    var dashed = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if dashed {
+                HStack(spacing: 2) {
+                    Rectangle().frame(width: 4, height: 2)
+                    Rectangle().frame(width: 4, height: 2)
+                }
+                .foregroundStyle(tint)
+            } else {
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 10, height: 3)
+            }
+            Text(AidenteL10n.t(title))
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -1097,25 +1235,43 @@ private struct ProtectionPill: View {
 
     let title: String
     let isEnabled: Bool
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(isEnabled ? AidenteTheme.jade : Color.secondary)
-                .frame(width: 6, height: 6)
-            Text(AidenteL10n.t(title))
-                .font(.system(size: 10.5, weight: .medium))
-            Text(AidenteL10n.t(isEnabled ? "开" : "关"))
-                .font(.system(size: 9.5, weight: .bold))
-                .foregroundStyle(isEnabled ? AidenteTheme.jade : .secondary)
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: isEnabled ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(isEnabled ? AidenteTheme.jade : Color.secondary)
+                Text(AidenteL10n.t(title))
+                    .font(.system(size: 10.5, weight: .medium))
+                Text(AidenteL10n.t(isEnabled ? "开" : "关"))
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(isEnabled ? AidenteTheme.jade : .secondary)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        (isEnabled ? AidenteTheme.jade : Color.secondary)
+                            .opacity(isEnabled ? 0.10 : 0.04)
+                    )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        (isEnabled ? AidenteTheme.jade : Color.secondary).opacity(0.20),
+                        lineWidth: 1
+                    )
+            }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(.white.opacity(0.04))
-        )
+        .buttonStyle(.plain)
+        .accessibilityLabel(AidenteL10n.t(title))
+        .accessibilityValue(AidenteL10n.t(isEnabled ? "开启" : "关闭"))
+        .accessibilityHint(AidenteL10n.t("点击切换", "Click to toggle"))
     }
 }
 

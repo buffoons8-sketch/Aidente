@@ -188,4 +188,10 @@ extension Defaults.Keys {
 
     // Advanced
     static let useHardwarePercentage = Key<Bool>("useHardwarePercentage", default: false)
+
+    // Diagnostics
+    static let diagnosticSessionStartedAt = Key<Double>(
+        "diagnosticSessionStartedAt", default: 0)
+    static let diagnosticSessionID = Key<String>(
+        "diagnosticSessionID", default: "")
 }

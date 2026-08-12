@@ -9,6 +9,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case charging = "Charging"
     case automation = "Automation"
     case advanced = "Advanced"
+    case diagnostics = "Diagnostics"
     case about = "About"
 
     var id: String { rawValue }
@@ -29,6 +30,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .charging: AidenteL10n.t("充电管理")
         case .automation: AidenteL10n.t("计划与自动化")
         case .advanced: AidenteL10n.t("高级")
+        case .diagnostics: AidenteL10n.t("诊断")
         case .about: AidenteL10n.t("关于")
         }
     }
@@ -45,6 +47,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
             return "calendar.badge.clock"
         case .advanced:
             return "slider.horizontal.3"
+        case .diagnostics:
+            return "waveform.badge.magnifyingglass"
         case .about:
             return "heart.text.square.fill"
         }
@@ -57,6 +61,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .charging: AidenteTheme.chargingColors
         case .automation: AidenteTheme.automationColors
         case .advanced: AidenteTheme.advancedColors
+        case .diagnostics: AidenteTheme.dashboardColors
         case .about: AidenteTheme.aboutColors
         }
     }
@@ -68,14 +73,17 @@ struct SettingsView: View {
 
     private let capabilities: DeviceCapabilities
     private let chargeManager: ChargeManager
+    private let diagnosticCenter: DiagnosticCenter
 
     init(
         capabilities: DeviceCapabilities,
         chargeManager: ChargeManager,
+        diagnosticCenter: DiagnosticCenter,
         initialTab: SettingsTab = .general
     ) {
         self.capabilities = capabilities
         self.chargeManager = chargeManager
+        self.diagnosticCenter = diagnosticCenter
         _selectedTab = State(initialValue: initialTab)
     }
 
@@ -146,6 +154,8 @@ struct SettingsView: View {
                         AutomationSettingsView()
                     case .advanced:
                         AdvancedSettingsView()
+                    case .diagnostics:
+                        DiagnosticsSettingsView(diagnosticCenter: diagnosticCenter)
                     case .about:
                         AboutSettingsView()
                     }
@@ -153,7 +163,7 @@ struct SettingsView: View {
             }
         }
         .tint(AidenteTheme.jade)
-        .frame(minWidth: 860, minHeight: 600)
+        .frame(minWidth: 960, minHeight: 640)
         .onAppear {
             updateWindowTitle()
         }

@@ -4,11 +4,11 @@ Aidente is an independent, open-source macOS menu bar app for Apple Silicon
 MacBooks. It monitors battery and power data and can manage low-level charging
 controls through an explicitly approved privileged helper.
 
-Version 0.5.0 completes the Aidente rename, follows the macOS system language
-by default, and also offers explicit Chinese/English choices. It merges live
-battery percentage and charge-limit adjustment into one interactive battery
-track, uses an adaptive power-flow diagram for live power data, and resolves
-app names from macOS bundle metadata to avoid garbled energy-ranking labels.
+Version 0.8.4 improves the visibility of live voltage and current readings by
+using a brighter source-matched color and stronger typography in the power-flow
+diagram. It also includes the diagnostics center, long-term battery-capacity
+history, active charger specification, and direct dashboard protection toggles
+introduced after the previous public release.
 
 This project does not contain AlDente Pro code, assets, activation logic, or
 modified binaries. It implements similar battery-care workflows from public
@@ -37,8 +37,15 @@ disabled rather than forced.
   - restore the saved charge limit
 - Heat protection with five-minute hysteresis
 - Hardware and macOS battery percentages
+- One-decimal battery-health estimate based on full versus design capacity
+- Design, current, and estimated full-charge capacity in mAh
+- Long-term capacity history from first run onward with one point per day
+- 30-day, one-year, and all-time capacity-history chart ranges
 - Battery health, cycle count, temperature, voltage, current, and power
 - Power-flow visualization
+- Live adapter and battery voltage/current readings inside the power-flow nodes
+- Compact active charger protocol/voltage/current/wattage display in the charge-limit card
+- Direct dashboard toggles for heat protection, sleep pause, and sailing
 - MagSafe LED states when supported
 - Pause charging while sleeping
 - Optional charging-state preservation after the app quits
@@ -50,6 +57,11 @@ disabled rather than forced.
   and falls back to a compatible translucent effect on older macOS versions
 - Unicode-safe live energy app names sourced from macOS application metadata
 - Apple Shortcuts-compatible URL actions
+- Opt-in issue recording with a copyable support ID
+- One-click, locally generated diagnostic ZIP with privacy redaction
+- Optional crash-report collection and opt-in energy-app names
+- Bundled on-demand CLI with no additional resident process
+- Standalone dashboard on app reopen when the menu bar icon is hidden
 
 ## Install
 
@@ -71,6 +83,29 @@ aidente://calibrate
 aidente://pause
 aidente://discharge?value=70
 aidente://resume
+```
+
+## Diagnostics and CLI
+
+Open Settings → Diagnostics to start an issue-recording session or export a
+diagnostic ZIP. The default package excludes energy-app names and intentionally
+does not collect account names, serial numbers, or network configuration.
+
+The optional CLI is bundled at:
+
+```text
+/Applications/Aidente.app/Contents/Resources/aidente
+```
+
+It can show status or trigger the same URL-based actions as the graphical app:
+
+```text
+aidente status
+aidente limit 80
+aidente pause
+aidente resume
+aidente dashboard
+aidente diagnostics
 ```
 
 ## Build from source

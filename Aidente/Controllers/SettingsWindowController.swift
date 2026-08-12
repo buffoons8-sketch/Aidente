@@ -7,10 +7,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private let capabilities: DeviceCapabilities
     private let chargeManager: ChargeManager
+    private let diagnosticCenter: DiagnosticCenter
 
-    init(capabilities: DeviceCapabilities, chargeManager: ChargeManager) {
+    init(
+        capabilities: DeviceCapabilities,
+        chargeManager: ChargeManager,
+        diagnosticCenter: DiagnosticCenter
+    ) {
         self.capabilities = capabilities
         self.chargeManager = chargeManager
+        self.diagnosticCenter = diagnosticCenter
         super.init()
     }
 
@@ -24,6 +30,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let settingsView = SettingsView(
             capabilities: capabilities,
             chargeManager: chargeManager,
+            diagnosticCenter: diagnosticCenter,
             initialTab: tab
         )
         let hostingController = NSHostingController(rootView: settingsView)

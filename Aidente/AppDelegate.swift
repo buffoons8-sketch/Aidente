@@ -11,6 +11,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var batteryService: BatteryService!
     private var viewModel: MenuViewModel!
     private var chargeManager: ChargeManager!
+    private var diagnosticCenter: DiagnosticCenter!
+    private var batteryHistoryService: BatteryHistoryService!
     private var settingsWindowController: SettingsWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -58,6 +60,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             await setupServices()
             if CommandLine.arguments.contains("--preview-window") {
                 statusBarManager.showWindowForPreview()
+            } else if CommandLine.arguments.contains("--dashboard-window") {
+                statusBarManager.showDashboardWindow()
             } else if CommandLine.arguments.contains("--show-popover") {
                 statusBarManager.showPopoverForPreview()
             }
@@ -95,13 +99,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         chargeManager = ChargeManager(batteryService: batteryService)
         chargeManager.configureHelperDisconnectPolicy()
         chargeManager.checkControlService()
-        viewModel = MenuViewModel(
+        batteryHistoryService = BatteryHistoryService(
+            batteryService: batteryService
+        )
+        diagnosticCenter = DiagnosticCenter(
             batteryService: batteryService,
             chargeManager: chargeManager
         )
+        viewModel = MenuViewModel(
+            batteryService: batteryService,
+            chargeManager: chargeManager,
+            batteryHistoryService: batteryHistoryService
+        )
         settingsWindowController = SettingsWindowController(
             capabilities: batteryService.deviceCapabilities,
-            chargeManager: chargeManager
+            chargeManager: chargeManager,
+            diagnosticCenter: diagnosticCenter
         )
         statusBarManager = StatusBarManager(
             viewModel: viewModel,
@@ -147,14 +160,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )?.queryItems?.first(where: { $0.name == "tab" })?.value
                 let tab = tabValue.flatMap(SettingsTab.init(urlValue:)) ?? .general
                 settingsWindowController.showSettings(tab: tab)
+            } else if url.host == "dashboard" {
+                statusBarManager.showDashboardWindow()
             } else {
                 chargeManager.handleAutomationURL(url)
             }
         }
     }
 
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        guard statusBarManager != nil else { return false }
+        statusBarManager.showDashboardWindow()
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         chargeManager.configureHelperDisconnectPolicy()
+        diagnosticCenter.stop()
+        batteryHistoryService.stop()
         chargeManager.stop()
         batteryService.stop()
         NSWorkspace.shared.notificationCenter.removeObserver(self)

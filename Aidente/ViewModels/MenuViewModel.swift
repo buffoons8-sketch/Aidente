@@ -8,6 +8,7 @@ import Observation
 class MenuViewModel {
     private let batteryService: BatteryService
     private let chargeManager: ChargeManager
+    private let batteryHistoryService: BatteryHistoryService
     private let bootTimestamp: Date?
 
     var batteryPercentageText: String = "0%"
@@ -18,8 +19,16 @@ class MenuViewModel {
     var batteryTemperatureText: String = "0°C"
     var externalInputText: String = "0V @ 0A"
     var internalInputText: String = "0V @ 0A"
+    var adapterElectricalText: String = "0V · 0A"
+    var batteryElectricalText: String = "0V · 0A"
     var cycleCountText: String = "0"
-    var batteryHealthText: String = "100%"
+    var batteryHealthText: String = "0.0%"
+    var currentCapacityText: String = "—"
+    var estimatedFullCapacityText: String = "—"
+    var designCapacityText: String = "—"
+    var batteryCapacityHistory: [BatteryCapacitySample] = []
+    var batteryHistoryTrackingText: String = AidenteL10n.t("每日记录 · 今天开始")
+    var adapterSpecificationText: String = "—"
 
     var displayPercentage: Int = 0
     var chargingMode: ChargingMode = .discharging
@@ -42,16 +51,23 @@ class MenuViewModel {
     var adapterConnected: Bool = false
 
     private var metricsObservation: Task<Void, Never>?
+    private var historyObservation: Task<Void, Never>?
     private var settingsObservation: Task<Void, Never>?
     private var uptimeTask: Task<Void, Never>?
-    private var powerModeObservation: Task<Void, Never>?
+    private var powerModeObserver: NSObjectProtocol?
     private var energyUsageTask: Task<Void, Never>?
 
-    init(batteryService: BatteryService, chargeManager: ChargeManager) {
+    init(
+        batteryService: BatteryService,
+        chargeManager: ChargeManager,
+        batteryHistoryService: BatteryHistoryService
+    ) {
         self.batteryService = batteryService
         self.chargeManager = chargeManager
+        self.batteryHistoryService = batteryHistoryService
         self.bootTimestamp = SystemService.bootTimestamp()
         startObservingMetrics()
+        startObservingHistory()
         startObservingSettings()
         startObservingPowerMode()
     }
@@ -93,15 +109,37 @@ class MenuViewModel {
         }
     }
 
+    private func startObservingHistory() {
+        historyObservation = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                self.batteryCapacityHistory = self.batteryHistoryService.samples
+                self.batteryHistoryTrackingText = self.formatHistoryTrackingText(
+                    self.batteryHistoryService.trackingStartedAt
+                )
+                await withCheckedContinuation { continuation in
+                    withObservationTracking {
+                        _ = self.batteryHistoryService.samples
+                        _ = self.batteryHistoryService.trackingStartedAt
+                    } onChange: {
+                        Task { @MainActor in
+                            continuation.resume()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func startObservingPowerMode() {
         isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
 
-        powerModeObservation = Task { [weak self] in
-            let notifications = NotificationCenter.default.notifications(
-                named: .NSProcessInfoPowerStateDidChange,
-                object: ProcessInfo.processInfo
-            )
-            for await _ in notifications {
+        powerModeObserver = NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange,
+            object: ProcessInfo.processInfo,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
                 self?.isLowPowerModeEnabled = ProcessInfo.processInfo.isLowPowerModeEnabled
             }
         }
@@ -192,15 +230,26 @@ class MenuViewModel {
         internalInputText =
             "\(metrics.batteryVoltage.formatted(voltageFormat))V @ \(metrics.batteryCurrent.formatted(currentFormat))A"
 
+        adapterElectricalText =
+            "\(abs(adapter.adapterVoltage).formatted(voltageFormat))V · \(abs(adapter.adapterCurrent).formatted(currentFormat))A"
+        batteryElectricalText =
+            "\(abs(metrics.batteryVoltage).formatted(voltageFormat))V · \(abs(metrics.batteryCurrent).formatted(currentFormat))A"
+
         batteryPower = metrics.batteryPower
         adapterPower = adapter.adapterPower
         systemPower = adapter.adapterPower - metrics.batteryPower
         powerSource = derivedPowerSource
         isCharging = metrics.isCharging
         adapterConnected = adapter.adapterConnected
+        adapterSpecificationText = formatAdapterSpecification(adapter)
 
         cycleCountText = "\(metrics.cycleCount)"
-        batteryHealthText = "\(metrics.batteryHealth)%"
+        batteryHealthText = String(format: "%.1f%%", metrics.batteryHealth)
+        currentCapacityText = formatCapacity(metrics.currentCapacityMilliampHours)
+        estimatedFullCapacityText = formatCapacity(
+            metrics.estimatedFullChargeCapacityMilliampHours
+        )
+        designCapacityText = formatCapacity(metrics.designCapacityMilliampHours)
     }
 
     private func derivePowerSource(battery: BatteryMetrics, adapter: AdapterMetrics) -> PowerSource {
@@ -290,6 +339,7 @@ class MenuViewModel {
 
     func menuWillOpen() {
         updateUptimeText()
+        batteryHistoryService.captureCurrent()
         startUptimeTimer()
         startEnergyUsageTimer()
         batteryService.enableFastPolling()
@@ -320,12 +370,57 @@ class MenuViewModel {
         )
     }
 
+    private func formatCapacity(_ milliampHours: Int) -> String {
+        guard milliampHours > 0 else { return "—" }
+        return "\(milliampHours) mAh"
+    }
+
+    private func formatAdapterSpecification(_ adapter: AdapterMetrics) -> String {
+        let protocolText: String
+        switch adapter.protocolName {
+        case "USB PD": protocolText = "USB PD"
+        case "Wireless": protocolText = AidenteL10n.t("无线供电", "Wireless")
+        default: protocolText = AidenteL10n.t("未识别", "Unknown")
+        }
+
+        if let active = adapter.powerProfiles.first(where: \.isActive) {
+            return "\(protocolText) · \(formatSpecification(active.voltage))V · \(formatSpecification(active.current))A · \(formatSpecification(active.power))W"
+        }
+        if adapter.maximumSupportedPower > 0 {
+            return "\(protocolText) · \(formatSpecification(adapter.maximumSupportedPower))W"
+        }
+        return protocolText
+    }
+
+    private func formatSpecification(_ value: Double) -> String {
+        value.formatted(
+            .number.precision(
+                .fractionLength(value.rounded() == value ? 0 : 1)
+            )
+        )
+    }
+
+    private func formatHistoryTrackingText(_ startDate: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: AidenteL10n.isEnglish ? "en_US" : "zh_CN")
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        let dateText = formatter.string(from: startDate)
+        return AidenteL10n.t(
+            "自 \(dateText) 开始记录 · 每天 1 个数据点",
+            "Tracking since \(dateText) · 1 point per day"
+        )
+    }
+
     deinit {
         MainActor.assumeIsolated {
             metricsObservation?.cancel()
+            historyObservation?.cancel()
             settingsObservation?.cancel()
             uptimeTask?.cancel()
-            powerModeObservation?.cancel()
+            if let powerModeObserver {
+                NotificationCenter.default.removeObserver(powerModeObserver)
+            }
             energyUsageTask?.cancel()
         }
     }

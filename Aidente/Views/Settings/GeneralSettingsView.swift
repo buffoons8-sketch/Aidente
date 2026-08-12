@@ -1,3 +1,4 @@
+import AppKit
 import Defaults
 import SwiftUI
 
@@ -80,6 +81,28 @@ struct GeneralSettingsView: View {
                     colors: AidenteTheme.generalColors,
                     isOn: $launchAtLogin
                 )
+            }
+
+            AidenteCard(
+                "主菜单呼出",
+                subtitle: "菜单栏图标被系统折叠时，仍然可以打开完整主菜单。",
+                icon: "macwindow.on.rectangle",
+                colors: AidenteTheme.dashboardColors
+            ) {
+                AidenteNotice(
+                    text: "双击“应用程序”文件夹、启动台或聚焦搜索中的 Aidente 图标，即可打开独立主菜单窗口。",
+                    icon: "cursorarrow.click.2",
+                    colors: AidenteTheme.dashboardColors
+                )
+
+                Button {
+                    if let url = URL(string: "aidente://dashboard") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label(AidenteL10n.t("打开主菜单"), systemImage: "macwindow")
+                }
+                .buttonStyle(AidenteActionButtonStyle(colors: AidenteTheme.dashboardColors))
             }
 
             AidenteCard(

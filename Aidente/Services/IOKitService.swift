@@ -120,16 +120,26 @@ class IOKitService {
             batteryMetrics.timeRemaining = getTimeRemaining(powerInfo: powerInfo) ?? -1
         }
 
-        let capacities = getBatteryCapacities()
+        let capacities = getBatteryCapacities(
+            displayedPercentage: batteryMetrics.batteryPercentage
+        )
+        batteryMetrics.currentCapacityMilliampHours = capacities.current
+        batteryMetrics.estimatedFullChargeCapacityMilliampHours = capacities.full
+        batteryMetrics.designCapacityMilliampHours = capacities.design
         batteryMetrics.batteryHealth =
             capacities.design > 0
-            ? (capacities.max * 100) / capacities.design
-            : 100
+            ? Double(capacities.full) * 100 / Double(capacities.design)
+            : 0
 
         batteryMetrics.externalConnected =
             getPropertyValue(batteryService, key: "ExternalConnected") ?? false
 
-        adapterMetrics.adapterConnected = isAdapterConnected()
+        let adapterSpecification = getAdapterSpecification()
+        adapterMetrics.maximumSupportedPower = adapterSpecification.maximumPower
+        adapterMetrics.protocolName = adapterSpecification.protocolName
+        adapterMetrics.powerProfiles = adapterSpecification.profiles
+        adapterMetrics.adapterConnected = batteryMetrics.externalConnected
+            || adapterMetrics.maximumSupportedPower > 0
 
         if let temp = getBatteryTemperature(powerInfo: powerInfo) {
             batteryMetrics.batteryTemperature = temp
@@ -139,7 +149,7 @@ class IOKitService {
             getPropertyValue(batteryService, key: "CycleCount") ?? 0
 
         logger.debug(
-            "IOKit metrics: battery=\(batteryMetrics.batteryPercentage)%, hardwareBattery=\(batteryMetrics.hardwareBatteryPercentage)%, health=\(batteryMetrics.batteryHealth)%, charging=\(batteryMetrics.isCharging), temp=\(batteryMetrics.batteryTemperature)°C, cycles=\(batteryMetrics.cycleCount), timeRemaining=\(batteryMetrics.timeRemaining), externalConnected=\(batteryMetrics.externalConnected), adapterConnected=\(adapterMetrics.adapterConnected)"
+            "IOKit metrics: battery=\(batteryMetrics.batteryPercentage)%, hardwareBattery=\(batteryMetrics.hardwareBatteryPercentage)%, health=\(batteryMetrics.batteryHealth)%, currentCapacity=\(batteryMetrics.currentCapacityMilliampHours)mAh, estimatedFullCapacity=\(batteryMetrics.estimatedFullChargeCapacityMilliampHours)mAh, designCapacity=\(batteryMetrics.designCapacityMilliampHours)mAh, charging=\(batteryMetrics.isCharging), temp=\(batteryMetrics.batteryTemperature)°C, cycles=\(batteryMetrics.cycleCount), timeRemaining=\(batteryMetrics.timeRemaining), externalConnected=\(batteryMetrics.externalConnected), adapterConnected=\(adapterMetrics.adapterConnected)"
         )
 
         continuation?.yield((batteryMetrics, adapterMetrics))
@@ -212,13 +222,84 @@ class IOKitService {
         return timeToFull
     }
 
-    private func isAdapterConnected() -> Bool {
-        guard let adapterDetails: [String: Any] = getPropertyValue(batteryService, key: "AdapterDetails"),
-              let watts = adapterDetails["Watts"] as? Int else {
-            return false
+    private func getAdapterSpecification() -> (
+        maximumPower: Double,
+        protocolName: String,
+        profiles: [AdapterPowerProfile]
+    ) {
+        let registryDetails = getRegistryAdapterDetails()
+        var maximumPower = 0.0
+
+        // Apple documents the Watts value returned by
+        // IOPSCopyExternalPowerAdapterDetails as the attached adapter wattage.
+        if let unmanagedDetails = IOPSCopyExternalPowerAdapterDetails() {
+            let details = unmanagedDetails.takeRetainedValue() as NSDictionary
+            if let watts = details["Watts"] as? NSNumber, watts.doubleValue > 0 {
+                maximumPower = watts.doubleValue
+            }
         }
 
-        return watts > 0
+        if maximumPower <= 0,
+           let watts = registryDetails?["Watts"] as? NSNumber {
+            maximumPower = watts.doubleValue
+        }
+
+        let activeIndex = (registryDetails?["UsbHvcHvcIndex"] as? NSNumber)?.intValue
+        let menu = registryDetails?["UsbHvcMenu"] as? [[String: Any]] ?? []
+        var profiles = menu.compactMap { item -> AdapterPowerProfile? in
+            guard let voltageMillivolts = (item["MaxVoltage"] as? NSNumber)?.doubleValue,
+                  let currentMilliamps = (item["MaxCurrent"] as? NSNumber)?.doubleValue,
+                  voltageMillivolts > 0, currentMilliamps > 0 else {
+                return nil
+            }
+            let voltage = voltageMillivolts / 1_000
+            let current = currentMilliamps / 1_000
+            let index = (item["Index"] as? NSNumber)?.intValue
+            return AdapterPowerProfile(
+                voltage: voltage,
+                current: current,
+                power: voltage * current,
+                isActive: index == activeIndex
+            )
+        }
+        profiles.sort { $0.voltage < $1.voltage }
+
+        if maximumPower <= 0 {
+            maximumPower = profiles.map(\.power).max() ?? 0
+        }
+
+        let description = (registryDetails?["Description"] as? String)?
+            .lowercased() ?? ""
+        let isWireless = (registryDetails?["IsWireless"] as? NSNumber)?.boolValue ?? false
+        let protocolName: String
+        if isWireless {
+            protocolName = "Wireless"
+        } else if !profiles.isEmpty || description.contains("pd") {
+            protocolName = "USB PD"
+        } else {
+            protocolName = ""
+        }
+
+        return (maximumPower, protocolName, profiles)
+    }
+
+    private func getRegistryAdapterDetails() -> [String: Any]? {
+        if let details: [String: Any] = getPropertyValue(
+            batteryService,
+            key: "AdapterDetails"
+        ) {
+            return details
+        }
+
+        let rawDetails: [[String: Any]] = getPropertyValue(
+            batteryService,
+            key: "AppleRawAdapterDetails"
+        ) ?? []
+        return rawDetails.max { lhs, rhs in
+            let left = (lhs["Watts"] as? NSNumber)?.doubleValue ?? 0
+            let right = (rhs["Watts"] as? NSNumber)?.doubleValue ?? 0
+            return left < right
+        }
     }
 
     private func getBatteryTemperature(powerInfo: [String: Any]?) -> Double? {
@@ -247,15 +328,27 @@ class IOKitService {
         return (0...80).contains(celsius) ? celsius : nil
     }
 
-    private func getBatteryCapacities() -> (current: Int, max: Int, design: Int) {
-        let currentCapacity: Int =
-            getPropertyValue(batteryService, key: "AppleRawCurrentCapacity")
+    private func getBatteryCapacities(
+        displayedPercentage: Int
+    ) -> (current: Int, full: Int, design: Int) {
+        let rawCurrentCapacity: Int? = getPropertyValue(
+            batteryService,
+            key: "AppleRawCurrentCapacity"
+        )
+        let fullCapacity: Int =
+            getPropertyValue(batteryService, key: "AppleRawMaxCapacity")
+            ?? getPropertyValue(batteryService, key: "NominalChargeCapacity")
+            ?? getPropertyValue(batteryService, key: "FullChargeCapacity")
             ?? 0
-        let maxCapacity: Int =
-            getPropertyValue(batteryService, key: "AppleRawMaxCapacity") ?? 0
         let designCapacity: Int =
             getPropertyValue(batteryService, key: "DesignCapacity") ?? 0
 
-        return (currentCapacity, maxCapacity, designCapacity)
+        let estimatedCurrentCapacity =
+            fullCapacity > 0
+            ? Int((Double(fullCapacity) * Double(displayedPercentage) / 100).rounded())
+            : 0
+        let currentCapacity = rawCurrentCapacity ?? estimatedCurrentCapacity
+
+        return (currentCapacity, fullCapacity, designCapacity)
     }
 }

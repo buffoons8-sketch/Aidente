@@ -3,13 +3,14 @@ import Defaults
 import SwiftUI
 
 @MainActor
-final class StatusBarManager: NSObject, NSPopoverDelegate {
+final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
     private let statusItem: NSStatusItem
     private let viewModel: MenuViewModel
     private let settingsWindowController: SettingsWindowController
     private let popover = NSPopover()
     private var displayObservation: Task<Void, Never>?
     private var previewWindow: NSWindow?
+    private var dashboardWindow: NSWindow?
 
     init(
         viewModel: MenuViewModel,
@@ -22,18 +23,22 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
         )
         super.init()
 
-        configurePopover()
+        configurePopoverShell()
         setupPersistentHostingView()
         startDisplayObservation()
     }
 
-    private func configurePopover() {
-        let rootView = makeDashboardRootView()
-
+    private func configurePopoverShell() {
         popover.contentSize = NSSize(width: 408, height: 720)
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
+    }
+
+    private func preparePopoverContentIfNeeded() {
+        guard popover.contentViewController == nil else { return }
+
+        let rootView = makeDashboardRootView()
         popover.contentViewController = NSHostingController(rootView: rootView)
         popover.contentViewController?.view.wantsLayer = true
         popover.contentViewController?.view.layer?.cornerRadius = 15
@@ -47,6 +52,7 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
                 guard let self else { return }
                 self.popover.performClose(nil)
                 self.previewWindow?.close()
+                self.dashboardWindow?.close()
                 self.settingsWindowController.showSettings(tab: tab)
             },
             onQuit: { [weak self] in
@@ -114,6 +120,21 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
             return
         }
 
+        if let dashboardWindow, dashboardWindow.isVisible {
+            dashboardWindow.close()
+            Task { [weak self, weak sender] in
+                await Task.yield()
+                guard let self, let sender else { return }
+                self.presentPopover(relativeTo: sender)
+            }
+            return
+        }
+
+        presentPopover(relativeTo: sender)
+    }
+
+    private func presentPopover(relativeTo sender: NSStatusBarButton) {
+        preparePopoverContentIfNeeded()
         viewModel.menuWillOpen()
         popover.show(
             relativeTo: sender.bounds,
@@ -123,9 +144,57 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
         popover.contentViewController?.view.window?.makeKey()
     }
 
+    func showDashboardWindow() {
+        if let dashboardWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            dashboardWindow.makeKeyAndOrderFront(nil)
+            dashboardWindow.orderFrontRegardless()
+            return
+        }
+
+        if popover.isShown {
+            popover.performClose(nil)
+            Task { [weak self] in
+                await Task.yield()
+                self?.presentDashboardWindow()
+            }
+            return
+        }
+
+        presentDashboardWindow()
+    }
+
+    private func presentDashboardWindow() {
+        guard dashboardWindow == nil else { return }
+
+        let hostingController = NSHostingController(rootView: makeDashboardRootView())
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = AidenteL10n.t("Aidente 主菜单", "Aidente Dashboard")
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.setContentSize(NSSize(width: 408, height: 720))
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = true
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.center()
+
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.cornerRadius = 15
+        hostingController.view.layer?.masksToBounds = true
+
+        dashboardWindow = window
+        viewModel.menuWillOpen()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
     func showPopoverForPreview() {
         guard let button = statusItem.button, !popover.isShown else { return }
         NSApp.activate(ignoringOtherApps: true)
+        preparePopoverContentIfNeeded()
         viewModel.menuWillOpen()
         popover.show(
             relativeTo: button.bounds,
@@ -149,6 +218,7 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.isReleasedWhenClosed = false
+        panel.delegate = self
         if let screen = NSScreen.screens.first {
             let visibleFrame = screen.visibleFrame
             panel.setFrameOrigin(
@@ -174,6 +244,23 @@ final class StatusBarManager: NSObject, NSPopoverDelegate {
 
     func popoverDidClose(_ notification: Notification) {
         viewModel.menuDidClose()
+        Task { [weak self] in
+            await Task.yield()
+            self?.popover.contentViewController = nil
+        }
+    }
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            guard let closedWindow = notification.object as? NSWindow else { return }
+            if closedWindow === dashboardWindow {
+                dashboardWindow = nil
+                viewModel.menuDidClose()
+            } else if closedWindow === previewWindow {
+                previewWindow = nil
+                viewModel.menuDidClose()
+            }
+        }
     }
 
     deinit {

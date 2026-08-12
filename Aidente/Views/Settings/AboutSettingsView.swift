@@ -31,7 +31,12 @@ struct AboutSettingsView: View {
                                 .font(.title.bold())
                             Text(AidenteL10n.t("电池养护 · 充电管理 · 实时监测"))
                                 .foregroundStyle(.secondary)
-                            Text(AidenteL10n.t("版本 0.5.0", "Version 0.5.0"))
+                            Text(
+                                AidenteL10n.t(
+                                    "版本 \(appVersion)",
+                                    "Version \(appVersion)"
+                                )
+                            )
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(AidenteTheme.jade)
                         }
@@ -96,5 +101,11 @@ struct AboutSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "0.8.4"
     }
 }

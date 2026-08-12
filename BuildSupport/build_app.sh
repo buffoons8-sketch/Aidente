@@ -148,6 +148,15 @@ swiftc \
     -module-cache-path "$module_cache_dir" \
     -o "$build_dir/AidenteControl"
 
+swiftc \
+    -swift-version 5 \
+    "$project_dir/CLI/main.swift" \
+    -framework Foundation \
+    -sdk "$sdk" \
+    -target "$target" \
+    -module-cache-path "$module_cache_dir" \
+    -o "$build_dir/AidenteCLI"
+
 if [[ -e "$app_dir" ]]; then
     previous_app="$dist_dir/Aidente.previous.$(date +%Y%m%d%H%M%S).app"
     mv "$app_dir" "$previous_app"
@@ -163,6 +172,7 @@ cp "$build_dir/Aidente" "$app_dir/Contents/MacOS/Aidente"
 cp "$project_dir/BuildSupport/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$project_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE.txt"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$app_dir/Contents/Resources/THIRD_PARTY_NOTICES.md"
+cp "$build_dir/AidenteCLI" "$app_dir/Contents/Resources/aidente"
 
 reader_dir="$app_dir/Contents/XPCServices/com.aidente.app.reader.xpc"
 cp "$build_dir/AidenteReader" "$reader_dir/Contents/MacOS/AidenteReader"
