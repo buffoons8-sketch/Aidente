@@ -8,15 +8,18 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let capabilities: DeviceCapabilities
     private let chargeManager: ChargeManager
     private let diagnosticCenter: DiagnosticCenter
+    private let updateService: UpdateService
 
     init(
         capabilities: DeviceCapabilities,
         chargeManager: ChargeManager,
-        diagnosticCenter: DiagnosticCenter
+        diagnosticCenter: DiagnosticCenter,
+        updateService: UpdateService
     ) {
         self.capabilities = capabilities
         self.chargeManager = chargeManager
         self.diagnosticCenter = diagnosticCenter
+        self.updateService = updateService
         super.init()
     }
 
@@ -31,6 +34,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             capabilities: capabilities,
             chargeManager: chargeManager,
             diagnosticCenter: diagnosticCenter,
+            updateService: updateService,
             initialTab: tab
         )
         let hostingController = NSHostingController(rootView: settingsView)

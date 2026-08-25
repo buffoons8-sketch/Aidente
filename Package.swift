@@ -12,6 +12,7 @@ let package = Package(
         .executable(name: "AidenteReader", targets: ["AidenteReader"]),
         .executable(name: "AidenteControl", targets: ["AidenteControl"]),
         .executable(name: "aidente-cli", targets: ["AidenteCLI"]),
+        .executable(name: "aidente-updater", targets: ["AidenteUpdater"]),
     ],
     dependencies: [
         .package(path: "Vendor/Defaults"),
@@ -69,6 +70,10 @@ let package = Package(
         .executableTarget(
             name: "AidenteCLI",
             path: "CLI"
+        ),
+        .executableTarget(
+            name: "AidenteUpdater",
+            path: "UpdaterHelper"
         ),
     ]
 )

@@ -4,11 +4,10 @@ Aidente is an independent, open-source macOS menu bar app for Apple Silicon
 MacBooks. It monitors battery and power data and can manage low-level charging
 controls through an explicitly approved privileged helper.
 
-Version 6.0 improves the visibility of live voltage and current readings by
-using a brighter source-matched color and stronger typography in the power-flow
-diagram. It also includes the diagnostics center, long-term battery-capacity
-history, active charger specification, and direct dashboard protection toggles
-introduced after the previous public release.
+Version 6.0.1 adds secure background updates from the official GitHub Releases
+page. Aidente checks stable releases after launch and every six hours, verifies
+the GitHub SHA-256 digest, app signature, bundle identity, version, and arm64
+architecture, then replaces the installed app through a rollback-capable helper.
 
 This project does not contain AlDente Pro code, assets, activation logic, or
 modified binaries. It implements similar battery-care workflows from public
@@ -62,8 +61,14 @@ disabled rather than forced.
 - Optional crash-report collection and opt-in energy-app names
 - Bundled on-demand CLI with no additional resident process
 - Standalone dashboard on app reopen when the menu bar icon is hidden
+- Automatic and manual update checks against official stable GitHub Releases
+- One-click background download, verification, installation, and relaunch
+- Rollback to the previous app when replacement or relaunch fails
 
 ## Install
+
+Users upgrading from 6.0 must install 6.0.1 manually once because 6.0 did not
+yet contain the updater. Updates after 6.0.1 can be completed inside Aidente.
 
 Drag `Aidente.app` to `/Applications`, open it, then enable charge management in
 Settings → Charging. macOS may ask you to approve the background helper in

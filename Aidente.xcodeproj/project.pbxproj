@@ -257,6 +257,7 @@
 				A68B3E082F19AB4B00F115E4 /* Sources */,
 				A68B3E092F19AB4B00F115E4 /* Frameworks */,
 				A68B3E0A2F19AB4B00F115E4 /* Resources */,
+				A6F001012F7000000069CF9F /* Build Update Helper */,
 				A68B3E2E2F19ABCB00F115E4 /* Embed XPC Services */,
 				A6E6D7332F3A00000069CF9F /* Copy Helper Tools */,
 				A6E6D7342F3A00000069CF9F /* Copy LaunchDaemon Plist */,
@@ -421,6 +422,22 @@
 			shellPath = /bin/sh;
 			shellScript = "mkdir -p \"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons\"\ncp \"${SRCROOT}/ChargingHelper/com.aidente.app.control.plist\" \"${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Library/LaunchDaemons/\"\n";
 		};
+		A6F001012F7000000069CF9F /* Build Update Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/UpdaterHelper/main.swift",
+			);
+			name = "Build Update Helper";
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AidenteUpdater",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nupdater_output=\"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AidenteUpdater\"\nmkdir -p \"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\nxcrun --sdk macosx swiftc -swift-version 5 \"${SRCROOT}/UpdaterHelper/main.swift\" -framework Foundation -target arm64-apple-macosx14.0 -o \"${updater_output}\"\ncodesign --force --sign - --timestamp=none --identifier com.aidente.app.updater \"${updater_output}\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -490,7 +507,7 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 447GJ83BJ5;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -507,7 +524,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.8;
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.0.1;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.aidente.app.smc-power";
@@ -532,7 +549,7 @@
 				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 447GJ83BJ5;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -549,7 +566,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.8;
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.0.1;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.aidente.app.smc-power";
@@ -706,7 +723,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 447GJ83BJ5;
 				ENABLE_APP_SANDBOX = NO;
@@ -722,7 +739,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.8;
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aidente.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -742,7 +759,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 447GJ83BJ5;
 				ENABLE_APP_SANDBOX = NO;
@@ -758,7 +775,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.8;
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aidente.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -777,7 +794,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 447GJ83BJ5;
 				ENABLE_APP_SANDBOX = NO;
@@ -794,7 +811,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = "@loader_path/../../../../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.8;
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aidente.app.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -818,7 +835,7 @@
 				AUTOMATION_APPLE_EVENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 447GJ83BJ5;
 				ENABLE_APP_SANDBOX = NO;
@@ -835,7 +852,7 @@
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = "@loader_path/../../../../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.8;
-				MARKETING_VERSION = 6.0;
+				MARKETING_VERSION = 6.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aidente.app.reader;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

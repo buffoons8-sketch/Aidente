@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var chargeManager: ChargeManager!
     private var diagnosticCenter: DiagnosticCenter!
     private var batteryHistoryService: BatteryHistoryService!
+    private var updateService: UpdateService!
     private var settingsWindowController: SettingsWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -36,6 +37,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--unregister-helper") {
             try? ChargingHelperManager.shared.uninstall()
             Darwin.exit(0)
+        }
+
+        if CommandLine.arguments.contains("--test-update-version") {
+            let passed = UpdateService.runVersionSelfTest()
+            fputs(passed ? "PASS\n" : "FAIL\n", stdout)
+            fflush(stdout)
+            Darwin.exit(passed ? 0 : 1)
         }
 
         // Exit the app immediately if the device doesn't have a battery
@@ -68,6 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             observePowerEvents()
             requestNotificationPermissions()
             openSettingsFromCommandLineIfRequested()
+            updateService.presentPreviewAlertIfRequested()
         }
     }
 
@@ -106,6 +115,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             batteryService: batteryService,
             chargeManager: chargeManager
         )
+        updateService = UpdateService.shared
         viewModel = MenuViewModel(
             batteryService: batteryService,
             chargeManager: chargeManager,
@@ -114,12 +124,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController = SettingsWindowController(
             capabilities: batteryService.deviceCapabilities,
             chargeManager: chargeManager,
-            diagnosticCenter: diagnosticCenter
+            diagnosticCenter: diagnosticCenter,
+            updateService: updateService
         )
         statusBarManager = StatusBarManager(
             viewModel: viewModel,
             settingsWindowController: settingsWindowController
         )
+        updateService.start()
     }
 
     private func requestNotificationPermissions() {
@@ -180,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         chargeManager.configureHelperDisconnectPolicy()
         diagnosticCenter.stop()
+        updateService.stop()
         batteryHistoryService.stop()
         chargeManager.stop()
         batteryService.stop()

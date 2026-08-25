@@ -4,6 +4,9 @@ import SwiftUI
 
 struct AboutSettingsView: View {
     @Default(.appLanguage) private var appLanguage
+    @Default(.automaticallyCheckForUpdates) private var automaticallyCheckForUpdates
+
+    let updateService: UpdateService
 
     var body: some View {
         AidenteSettingsPage {
@@ -43,6 +46,91 @@ struct AboutSettingsView: View {
 
                         Spacer()
                     }
+                }
+            }
+
+            AidenteCard(
+                "软件更新",
+                subtitle: "从 Aidente 官方 GitHub 发行版安全获取更新。",
+                icon: "arrow.triangle.2.circlepath.circle.fill",
+                colors: [AidenteTheme.sky, AidenteTheme.jade]
+            ) {
+                AidenteInsetPanel {
+                    HStack(spacing: 12) {
+                        Image(systemName: updateService.statusIcon)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(Color(nsColor: updateService.statusColor))
+                            .frame(width: 34, height: 34)
+                            .background(
+                                Color(nsColor: updateService.statusColor).opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            )
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(updateService.statusTitle)
+                                .font(.system(size: 13.5, weight: .semibold))
+                            Text(updateService.statusDetail)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 12)
+
+                        Text("v\(updateService.currentVersion)")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(AidenteTheme.jade)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(
+                                Capsule().fill(AidenteTheme.jade.opacity(0.12))
+                            )
+                    }
+
+                    if updateService.isBusy {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(AidenteTheme.jade)
+                    }
+                }
+
+                AidenteSettingToggle(
+                    "自动检查更新",
+                    subtitle: "启动后检查，并每隔六小时检查一次正式发行版",
+                    icon: "clock.arrow.2.circlepath",
+                    colors: [AidenteTheme.jade, AidenteTheme.sky],
+                    isOn: $automaticallyCheckForUpdates
+                )
+
+                AidenteRowDivider()
+
+                HStack(spacing: 10) {
+                    Button {
+                        updateService.performPrimaryAction()
+                    } label: {
+                        Label(
+                            updateService.primaryActionTitle,
+                            systemImage: updateService.availableRelease == nil
+                                ? "arrow.clockwise"
+                                : "arrow.down.app.fill"
+                        )
+                    }
+                    .buttonStyle(
+                        AidenteActionButtonStyle(colors: AidenteTheme.chargingColors)
+                    )
+                    .disabled(updateService.isBusy)
+
+                    Button {
+                        updateService.openReleasePage()
+                    } label: {
+                        Label(
+                            AidenteL10n.t("查看 GitHub 发行版", "View GitHub Releases"),
+                            systemImage: "safari.fill"
+                        )
+                    }
+                    .buttonStyle(
+                        AidenteActionButtonStyle(colors: AidenteTheme.dashboardColors)
+                    )
                 }
             }
 
@@ -101,11 +189,14 @@ struct AboutSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .onChange(of: automaticallyCheckForUpdates) { _, _ in
+            updateService.automaticCheckPreferenceChanged()
+        }
     }
 
     private var appVersion: String {
         Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "6.0"
+        ) as? String ?? "6.0.1"
     }
 }

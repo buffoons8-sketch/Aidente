@@ -124,6 +124,8 @@ extension Defaults.Keys {
     static let launchAtLogin = Key<Bool>("launchAtLogin", default: false)
     static let interfaceMaterialStyle = Key<InterfaceMaterialStyle>(
         "interfaceMaterialStyle", default: .glass)
+    static let automaticallyCheckForUpdates = Key<Bool>(
+        "automaticallyCheckForUpdates", default: true)
 
     // Status Icon
     static let batteryPercentageDisplayLocation = Key<PercentageDisplayLocation>(

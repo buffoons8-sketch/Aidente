@@ -74,16 +74,19 @@ struct SettingsView: View {
     private let capabilities: DeviceCapabilities
     private let chargeManager: ChargeManager
     private let diagnosticCenter: DiagnosticCenter
+    private let updateService: UpdateService
 
     init(
         capabilities: DeviceCapabilities,
         chargeManager: ChargeManager,
         diagnosticCenter: DiagnosticCenter,
+        updateService: UpdateService,
         initialTab: SettingsTab = .general
     ) {
         self.capabilities = capabilities
         self.chargeManager = chargeManager
         self.diagnosticCenter = diagnosticCenter
+        self.updateService = updateService
         _selectedTab = State(initialValue: initialTab)
     }
 
@@ -157,7 +160,7 @@ struct SettingsView: View {
                     case .diagnostics:
                         DiagnosticsSettingsView(diagnosticCenter: diagnosticCenter)
                     case .about:
-                        AboutSettingsView()
+                        AboutSettingsView(updateService: updateService)
                     }
                 }
             }

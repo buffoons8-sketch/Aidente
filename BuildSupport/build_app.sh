@@ -157,6 +157,15 @@ swiftc \
     -module-cache-path "$module_cache_dir" \
     -o "$build_dir/AidenteCLI"
 
+swiftc \
+    -swift-version 5 \
+    "$project_dir/UpdaterHelper/main.swift" \
+    -framework Foundation \
+    -sdk "$sdk" \
+    -target "$target" \
+    -module-cache-path "$module_cache_dir" \
+    -o "$build_dir/AidenteUpdater"
+
 if [[ -e "$app_dir" ]]; then
     previous_app="$dist_dir/Aidente.previous.$(date +%Y%m%d%H%M%S).app"
     mv "$app_dir" "$previous_app"
@@ -173,6 +182,7 @@ cp "$project_dir/BuildSupport/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$project_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE.txt"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$app_dir/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cp "$build_dir/AidenteCLI" "$app_dir/Contents/Resources/aidente"
+cp "$build_dir/AidenteUpdater" "$app_dir/Contents/Resources/AidenteUpdater"
 
 reader_dir="$app_dir/Contents/XPCServices/com.aidente.app.reader.xpc"
 cp "$build_dir/AidenteReader" "$reader_dir/Contents/MacOS/AidenteReader"
@@ -188,29 +198,16 @@ cp \
     "$project_dir/ChargingHelper/com.aidente.app.control.plist" \
     "$app_dir/Contents/Library/LaunchDaemons/com.aidente.app.control.plist"
 
-icon_source="$build_dir/Aidente-icon-1024.png"
-icon_generator="$build_dir/generate-icon"
-iconset="$build_dir/Aidente.iconset"
-swiftc \
-    "$project_dir/BuildSupport/generate_icon.swift" \
-    -framework AppKit \
-    -sdk "$sdk" \
-    -target "$target" \
-    -o "$icon_generator"
-"$icon_generator" "$icon_source"
-mkdir -p "$iconset"
-sips -z 16 16 "$icon_source" --out "$iconset/icon_16x16.png" >/dev/null
-sips -z 32 32 "$icon_source" --out "$iconset/icon_16x16@2x.png" >/dev/null
-sips -z 32 32 "$icon_source" --out "$iconset/icon_32x32.png" >/dev/null
-sips -z 64 64 "$icon_source" --out "$iconset/icon_32x32@2x.png" >/dev/null
-sips -z 128 128 "$icon_source" --out "$iconset/icon_128x128.png" >/dev/null
-sips -z 256 256 "$icon_source" --out "$iconset/icon_128x128@2x.png" >/dev/null
-sips -z 256 256 "$icon_source" --out "$iconset/icon_256x256.png" >/dev/null
-sips -z 512 512 "$icon_source" --out "$iconset/icon_256x256@2x.png" >/dev/null
-sips -z 512 512 "$icon_source" --out "$iconset/icon_512x512.png" >/dev/null
-cp "$icon_source" "$iconset/icon_512x512@2x.png"
-iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/Aidente.icns"
+cp \
+    "$project_dir/BuildSupport/Aidente.icns" \
+    "$app_dir/Contents/Resources/Aidente.icns"
 
+codesign \
+    --force \
+    --sign - \
+    --timestamp=none \
+    --identifier com.aidente.app.updater \
+    "$app_dir/Contents/Resources/AidenteUpdater"
 codesign \
     --force \
     --sign - \
