@@ -178,6 +178,24 @@ class IOKitService {
         return prop.takeRetainedValue() as? T
     }
 
+    private func batteryDataDictionary() -> [String: Any] {
+        getPropertyValue(batteryService, key: "BatteryData") ?? [:]
+    }
+
+    private nonisolated func integerValue(
+        _ dictionary: [String: Any],
+        key: String
+    ) -> Int? {
+        switch dictionary[key] {
+        case let value as Int:
+            return value
+        case let value as NSNumber:
+            return value.intValue
+        default:
+            return nil
+        }
+    }
+
     private func getBatteryPercentages(powerInfo: [String: Any]?) -> (
         displayed: Int, hardware: Int
     ) {
@@ -335,19 +353,32 @@ class IOKitService {
             batteryService,
             key: "AppleRawCurrentCapacity"
         )
+        let batteryData = batteryDataDictionary()
+        // Apple silicon batteries publish the raw capacities directly on the
+        // AppleSmartBattery node, while some third-party battery controllers
+        // (for example the bq40z651 gauge) only expose them inside the nested
+        // BatteryData dictionary. Without this fallback design and full charge
+        // capacity read as zero, so battery health is reported as 0%.
         let fullCapacity: Int =
             getPropertyValue(batteryService, key: "AppleRawMaxCapacity")
             ?? getPropertyValue(batteryService, key: "NominalChargeCapacity")
             ?? getPropertyValue(batteryService, key: "FullChargeCapacity")
+            ?? integerValue(batteryData, key: "FullChargeCapacity")
+            ?? integerValue(batteryData, key: "NominalChargeCapacity")
             ?? 0
         let designCapacity: Int =
-            getPropertyValue(batteryService, key: "DesignCapacity") ?? 0
+            getPropertyValue(batteryService, key: "DesignCapacity")
+            ?? integerValue(batteryData, key: "DesignCapacity")
+            ?? 0
 
         let estimatedCurrentCapacity =
             fullCapacity > 0
             ? Int((Double(fullCapacity) * Double(displayedPercentage) / 100).rounded())
             : 0
-        let currentCapacity = rawCurrentCapacity ?? estimatedCurrentCapacity
+        let currentCapacity =
+            rawCurrentCapacity
+            ?? integerValue(batteryData, key: "RemainingCapacity")
+            ?? estimatedCurrentCapacity
 
         return (currentCapacity, fullCapacity, designCapacity)
     }
