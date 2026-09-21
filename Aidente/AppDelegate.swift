@@ -17,7 +17,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let argument = CommandLine.arguments.first(where: { $0.hasPrefix("--render-status-icons=") }) {
+            do {
+                try StatusIconPreview.render(to: String(argument.dropFirst("--render-status-icons=".count)))
+                Darwin.exit(0)
+            } catch { Darwin.exit(1) }
+        }
+        if CommandLine.arguments.contains("--check-control-signing") {
+            do {
+                try ChargingHelperManager.shared.validateSigningIdentity()
+                print("CONTROL_SIGNING_OK")
+                Darwin.exit(0)
+            } catch {
+                print("CONTROL_SIGNING_FAILED: \(error.localizedDescription)")
+                Darwin.exit(1)
+            }
+        }
         AidenteMigration.migrateLegacyPreferencesIfNeeded()
+
+        // Health-only integration probe: no charge policy, LED changes or UI
+        // services. Run from the installed bundle so SMAppService resolves it.
+        if CommandLine.arguments.contains("--check-control-service") {
+            Task {
+                do {
+                    try await ChargingHelperManager.shared.enableForUser()
+                    print("CONTROL_SERVICE_HEALTH_OK")
+                    Darwin.exit(0)
+                } catch {
+                    print("CONTROL_SERVICE_HEALTH_FAILED: \(error.localizedDescription)")
+                    Darwin.exit(1)
+                }
+            }
+            return
+        }
 
         if CommandLine.arguments.contains("--print-effective-defaults") {
             print("manageCharging=\(Defaults[.manageCharging])")
@@ -35,8 +67,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if CommandLine.arguments.contains("--unregister-helper") {
-            try? ChargingHelperManager.shared.uninstall()
-            Darwin.exit(0)
+            Task {
+                do {
+                    try await ChargingHelperManager.shared.uninstall()
+                    Darwin.exit(0)
+                } catch { Darwin.exit(1) }
+            }
+            return
         }
 
         if CommandLine.arguments.contains("--test-update-version") {

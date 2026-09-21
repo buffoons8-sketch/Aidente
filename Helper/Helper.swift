@@ -55,6 +55,15 @@ final class Helper: NSObject, AidenteReaderProtocol {
                 battery: battery.capabilities,
                 adapter: adapter.capabilities
             )
+            logger.notice("CHARGING_BACKEND \(battery.chargingControlKey, privacy: .public)")
+            if battery.usesFirmwareChargeLimit {
+                do {
+                    let limits = try FirmwareChargeLimitController(registers: SMCFirmwareLimitRegisters()).read()
+                    logger.notice("FIRMWARE_LIMIT active=\(limits.activation) lower=\(limits.lower) upper=\(limits.upper)")
+                } catch {
+                    logger.error("FIRMWARE_LIMIT_READ_FAILED \(error.localizedDescription, privacy: .public)")
+                }
+            }
             logger.info(
                 "Probed capabilities (charging=\(capabilities.chargingControl), adapter=\(capabilities.adapterControl), magSafe=\(capabilities.hasMagSafe))"
             )

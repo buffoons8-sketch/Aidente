@@ -22,3 +22,10 @@ mechanism, or proprietary asset is included.
 
 AlDente is a trademark of its respective owner. Aidente is independent and is
 not affiliated with or endorsed by AppHouseKitchen.
+
+The firmware register identifiers and byte-level charging protocol were checked
+against public research in charlie0129/batt (commit
+`ee86539e977049d9f15d2641f4545c17eabf679f`, `pkg/smc/charging.go`) and read-only
+probes on a MacBook. No batt source is bundled or linked; the Swift register
+adapter, transactional rollback, and integration are independently implemented.
+Protocol reference: <https://github.com/charlie0129/batt>.

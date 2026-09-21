@@ -10,6 +10,21 @@ let logger = Logger(
     category: "ServiceDelegate"
 )
 
+let localService = CommandLine.arguments.contains("--local-service")
+let restoreLocalDefaults = CommandLine.arguments.contains("--restore-local-defaults")
+if (localService || restoreLocalDefaults) && getuid() != 0 { exit(77) }
+
+func localClientRequirement() -> String? {
+    let path = LocalControlIdentity.manifest
+    var metadata = stat()
+    guard lstat(path, &metadata) == 0, metadata.st_uid == 0,
+          metadata.st_mode & S_IFMT == S_IFREG, metadata.st_mode & 0o022 == 0,
+          let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+          let fields = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: String],
+          let hash = fields["clientCDHash"] else { return nil }
+    return LocalControlIdentity.requirement(cdHash: hash)
+}
+
 let battery: SMCBattery
 let adapter: SMCAdapter
 do {
@@ -55,16 +70,11 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
         newConnection.exportedObject = helper
 
         logger.info("XPC connection accepted")
+        helper.clientConnected(pid: newConnection.processIdentifier)
 
         newConnection.invalidationHandler = { [weak self] in
             guard let self else { return }
-            if self.helper.resetOnDisconnect {
-                logger.info("XPC connection invalidated, resetting SMC keys to defaults")
-                self.helper.resetToDefaults()
-            } else {
-                logger.info("XPC connection invalidated, preserving the current SMC state")
-            }
-            exit(0)
+            self.helper.clientDisconnected()
         }
 
         newConnection.resume()
@@ -72,6 +82,12 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
     }
 
     private func isAuthorizedClient(processIdentifier: pid_t) -> Bool {
+        if localService {
+            // launchd/XPC enforces the root-owned cdhash pin for every incoming
+            // connection, avoiding PID-reuse authentication races. Path and
+            // console-user checks are additional restrictions, not fallbacks.
+            return executableURL(for: processIdentifier)?.path == LocalControlIdentity.clientPath
+        }
         guard
             let clientExecutableURL = executableURL(for: processIdentifier),
             let helperExecutableURL = executableURL(for: getpid())
@@ -112,8 +128,8 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             // Exact executable-path matching is the compatibility fallback for
             // local ad-hoc builds, whose runtime validity check can fail even
             // though the enclosing app passes codesign verification.
-            logger.warning("Could not inspect client signature; accepting exact Aidente executable")
-            return true
+            logger.warning("Could not inspect client signature; rejecting connection")
+            return false
         }
 
         var guestStaticCode: SecStaticCode?
@@ -122,8 +138,8 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             SecCSFlags(),
             &guestStaticCode
         ) == errSecSuccess, let guestStaticCode else {
-            logger.warning("Could not inspect static client signature; accepting exact Aidente executable")
-            return true
+            logger.warning("Could not inspect static client signature; rejecting connection")
+            return false
         }
 
         var expectedStaticCode: SecStaticCode?
@@ -132,16 +148,16 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
             SecCSFlags(),
             &expectedStaticCode
         ) == errSecSuccess, let expectedStaticCode else {
-            logger.warning("Could not inspect installed app signature; accepting exact Aidente executable")
-            return true
+            logger.warning("Could not inspect installed app signature; rejecting connection")
+            return false
         }
 
         guard
             let guestIdentity = signingIdentity(for: guestStaticCode),
             let expectedIdentity = signingIdentity(for: expectedStaticCode)
         else {
-            logger.warning("Missing ad-hoc signing identity; accepting exact Aidente executable")
-            return true
+            logger.warning("Missing signing identity; rejecting connection")
+            return false
         }
 
         return guestIdentity.identifier == "com.aidente.app"
@@ -195,10 +211,26 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
 }
 
 let helper = ChargingHelper(battery: battery, adapter: adapter)
+if restoreLocalDefaults {
+    let done = DispatchSemaphore(value: 0)
+    helper.restoreDefaults { success, error in
+        if !success { logger.error("UNINSTALL_RESTORE_FAILED \(error ?? "unknown", privacy: .public)") }
+        exit(success ? 0 : 1)
+    }
+    _ = done.wait(timeout: .now() + 10)
+    exit(1)
+}
 let delegate = ServiceDelegate(helper: helper)
 let listener = NSXPCListener(
-    machServiceName: "com.aidente.app.control"
+    machServiceName: localService ? LocalControlIdentity.label : "com.aidente.app.control"
 )
+if localService {
+    guard let requirement = localClientRequirement() else {
+        logger.fault("LOCAL_CLIENT_IDENTITY_MISSING")
+        exit(78)
+    }
+    listener.setConnectionCodeSigningRequirement(requirement)
+}
 listener.delegate = delegate
 listener.resume()
 

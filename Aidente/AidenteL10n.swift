@@ -28,6 +28,18 @@ enum AidenteL10n {
     }
 
     static func controlError(_ text: String) -> String {
+        if text.contains("FIRMWARE_ACCESS_DENIED") {
+            return t(
+                "系统固件拒绝充电控制权限。此限制不能通过重新安装后台服务解除，请导出诊断包以核查该机型与固件。",
+                "System firmware denied charging-control access. Reinstalling the helper cannot remove this restriction. Export diagnostics for this model and firmware."
+            )
+        }
+        if text.contains("Unsupported charging-control registers") {
+            return t(
+                "当前系统固件未提供可用的充电暂停接口。修复后台服务无法解除固件限制；请导出诊断包。Aidente 不会用断开适配器代替暂停充电。",
+                "This firmware exposes no supported pause-charging interface. Repairing the service cannot remove firmware restrictions. Export diagnostics; Aidente will not substitute adapter disconnection."
+            )
+        }
         if text.contains("后台控制服务未连接")
             || text.contains("Background control service is not connected")
         {

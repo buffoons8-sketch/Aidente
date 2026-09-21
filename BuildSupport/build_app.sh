@@ -10,6 +10,21 @@ dist_dir="$project_dir/Dist"
 app_dir="$dist_dir/Aidente.app"
 sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk"
 target="arm64-apple-macosx14.0"
+signing_identity="${AIDENTE_SIGNING_IDENTITY:--}"
+signing_options=(--timestamp=none)
+if [[ "$signing_identity" == "-" ]]; then
+    if [[ "${AIDENTE_RELEASE_BUILD:-0}" == "1" ]]; then
+        print -u2 "Release build requires AIDENTE_SIGNING_IDENTITY (Developer ID Application)."
+        exit 1
+    fi
+    print -u2 "Administrator-install build: ad-hoc integrity signing; no Apple notarization."
+else
+    if ! security find-identity -v -p codesigning | grep -F -- "$signing_identity" >/dev/null; then
+        print -u2 "Requested signing identity is not available. No ad-hoc fallback."
+        exit 1
+    fi
+    signing_options=(--timestamp --options runtime)
+fi
 
 if [[ ! -d "$sdk" ]]; then
     sdk=$(xcrun --sdk macosx --show-sdk-path)
@@ -181,6 +196,7 @@ cp "$build_dir/Aidente" "$app_dir/Contents/MacOS/Aidente"
 cp "$project_dir/BuildSupport/Info.plist" "$app_dir/Contents/Info.plist"
 cp "$project_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE.txt"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$app_dir/Contents/Resources/THIRD_PARTY_NOTICES.md"
+cp "$project_dir/BuildSupport/install_local_control.sh" "$app_dir/Contents/Resources/install_local_control.sh"
 cp "$build_dir/AidenteCLI" "$app_dir/Contents/Resources/aidente"
 cp "$build_dir/AidenteUpdater" "$app_dir/Contents/Resources/AidenteUpdater"
 
@@ -204,34 +220,39 @@ cp \
 
 codesign \
     --force \
-    --sign - \
-    --timestamp=none \
+    --sign "$signing_identity" \
+    "${signing_options[@]}" \
     --identifier com.aidente.app.updater \
     "$app_dir/Contents/Resources/AidenteUpdater"
 codesign \
     --force \
-    --sign - \
-    --timestamp=none \
+    --sign "$signing_identity" \
+    "${signing_options[@]}" \
     --identifier com.aidente.app.control \
     "$app_dir/Contents/MacOS/AidenteControl"
 codesign \
     --force \
-    --sign - \
-    --timestamp=none \
+    --sign "$signing_identity" \
+    "${signing_options[@]}" \
     --identifier com.aidente.app.control \
     "$app_dir/Contents/Library/LaunchDaemons/AidenteControl"
 codesign \
     --force \
-    --sign - \
-    --timestamp=none \
+    --sign "$signing_identity" \
+    "${signing_options[@]}" \
     --identifier com.aidente.app.reader \
     "$reader_dir"
 codesign \
     --force \
-    --sign - \
-    --timestamp=none \
+    --sign "$signing_identity" \
+    "${signing_options[@]}" \
     --identifier com.aidente.app \
     "$app_dir"
 
 codesign --verify --deep --strict --verbose=2 "$app_dir"
+if [[ "${AIDENTE_RELEASE_BUILD:-0}" == "1" ]]; then
+    for signed_component in "$app_dir" "$app_dir/Contents/MacOS/AidenteControl"; do
+        codesign --verify --strict -R '=anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$signed_component"
+    done
+fi
 echo "$app_dir"

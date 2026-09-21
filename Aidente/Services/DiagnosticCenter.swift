@@ -313,6 +313,7 @@ final class DiagnosticCenter {
         UI language: \(Defaults[.appLanguage].rawValue)
         Helper status: \(helperStatus)
         Helper registration error present: \(helper.registrationError != nil)
+        Helper registration error: \(Self.sanitize(helper.registrationError ?? "none"))
         Charging control capability: \(capabilities.chargingControl)
         Adapter control capability: \(capabilities.adapterControl)
         MagSafe present: \(capabilities.hasMagSafe)
@@ -326,6 +327,7 @@ final class DiagnosticCenter {
         let metrics = batteryService.metrics
         let adapter = batteryService.adapterMetrics
         let report: [String: Any] = [
+            "controlPolicy": chargeManager.controlDiagnostics,
             "timestamp": ISO8601DateFormatter().string(from: Date()),
             "battery": [
                 "displayedPercentage": metrics.batteryPercentage,
@@ -524,7 +526,7 @@ final class DiagnosticCenter {
             "--style", "compact",
             "--info",
             "--debug",
-            "--predicate", "subsystem BEGINSWITH \"com.aidente.app\"",
+            "--predicate", "subsystem BEGINSWITH \"com.aidente.app\" OR ((process == \"launchd\" OR process == \"kernel\" OR process == \"amfid\" OR process == \"smd\") AND (eventMessage CONTAINS[c] \"com.aidente.app.control\" OR eventMessage CONTAINS[c] \"AidenteControl\"))",
         ]
         process.standardOutput = handle
         process.standardError = handle

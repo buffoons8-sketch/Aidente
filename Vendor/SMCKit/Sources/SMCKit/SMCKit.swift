@@ -96,9 +96,19 @@ public final class SMCKit: Sendable {
     }
 
     public func writeData(_ key: FourCharCode, _ value: Data) throws {
+        try writeData(key, value, allowedTypes: [DataTypes.HexData.type])
+    }
+
+    // Firmware can expose a one-byte control register as hex_ or ui8.
+    // Preserve the reported type and enforce the exact size in both cases.
+    public func writeControlData(_ key: FourCharCode, _ value: Data) throws {
+        try writeData(key, value, allowedTypes: [DataTypes.HexData.type, DataTypes.UInt8.type])
+    }
+
+    private func writeData(_ key: FourCharCode, _ value: Data, allowedTypes: [FourCharCode]) throws {
         let keyInfo = try getKeyInformation(key)
 
-        guard keyInfo.type == DataTypes.HexData.type else {
+        guard allowedTypes.contains(keyInfo.type) else {
             throw SMCError.dataTypeMismatch(key: key.toString())
         }
 

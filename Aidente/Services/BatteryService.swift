@@ -27,15 +27,15 @@ enum XPCError: LocalizedError {
     }
 }
 
-private final class XPCCommandReply: @unchecked Sendable {
+final class XPCCommandReply<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Error>?
+    private var continuation: CheckedContinuation<Value, Error>?
 
-    init(_ continuation: CheckedContinuation<Void, Error>) {
+    init(_ continuation: CheckedContinuation<Value, Error>) {
         self.continuation = continuation
     }
 
-    func finish(_ result: Result<Void, Error>) {
+    func finish(_ result: Result<Value, Error>) {
         lock.lock()
         guard let continuation else {
             lock.unlock()
@@ -81,34 +81,41 @@ class BatteryService {
     }
 
     func loadCapabilities() async {
-        let logger = self.logger
-        guard
-            let helper = xpcManager.getHelper(errorHandler: { error in
-                logger.error(
-                    "XPC error loading capabilities: \(error.localizedDescription)")
-            })
-        else {
-            logger.warning("Helper unavailable for capability probe")
-            return
-        }
-
-        let capabilities: DeviceCapabilities = await withCheckedContinuation { continuation in
-            helper.getCapabilities { chargingControl, adapterControl, hasMagSafe, magsafeLEDControl in
-                continuation.resume(
-                    returning: DeviceCapabilities(
+        do {
+            let capabilities: DeviceCapabilities = try await withCheckedThrowingContinuation { continuation in
+                let result = XPCCommandReply(continuation)
+                guard let helper = xpcManager.getHelper(errorHandler: { error in
+                    result.finish(.failure(error))
+                }) else {
+                    result.finish(.failure(XPCError.helperUnavailable))
+                    return
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 3) {
+                    result.finish(.failure(XPCError.timeout))
+                }
+                helper.getCapabilities { chargingControl, adapterControl, hasMagSafe, magsafeLEDControl in
+                    result.finish(.success(DeviceCapabilities(
                         chargingControl: chargingControl,
                         adapterControl: adapterControl,
                         hasMagSafe: hasMagSafe,
                         magsafeLEDControl: magsafeLEDControl
-                    )
-                )
+                    )))
+                }
             }
-        }
-
-        self.deviceCapabilities = capabilities
-        logger.info(
+            self.deviceCapabilities = capabilities
+            logger.info(
             "Capabilities loaded: charging=\(capabilities.chargingControl), adapter=\(capabilities.adapterControl), magSafe=\(capabilities.hasMagSafe)"
-        )
+            )
+        } catch {
+            logger.error("Capability refresh failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func refreshAfterWake() async {
+        ioKitService.refreshMetrics()
+        await Task.yield()
+        await loadCapabilities()
+        scheduleSinglePoll(delay: .seconds(1))
     }
 
     private func startIOKitMonitoring() {
@@ -285,6 +292,23 @@ class BatteryService {
         }
     }
 
+    func applyPowerPolicy(charging: Bool, adapter: Bool, managed: Bool,
+                          stopWhileSleeping: Bool, resetOnDisconnect: Bool,
+                          chargeCeiling: Int, rechargeBelow: Int) async throws {
+        try await ChargingHelperManager.shared.prepareForControl()
+        do {
+            try await performControlCommand { helper, reply in
+                helper.applyPowerPolicy(charging: charging, adapter: adapter, managed: managed,
+                                        stopWhileSleeping: stopWhileSleeping,
+                                        resetOnDisconnect: resetOnDisconnect,
+                                        chargeCeiling: chargeCeiling, rechargeBelow: rechargeBelow, reply: reply)
+            }
+        } catch {
+            ChargingHelperManager.shared.recoverAfterTransportFailure(error)
+            throw error
+        }
+    }
+
     func manageExternalPower(enabled: Bool) async throws {
         try await performControlCommand { helper, reply in
             helper.manageExternalPower(enabled: enabled, reply: reply)
@@ -298,6 +322,7 @@ class BatteryService {
     }
 
     func checkChargingHelper() async throws {
+        try await ChargingHelperManager.shared.prepareForControl()
         try await performControlCommand { helper, reply in
             helper.ping(reply: reply)
         }
@@ -309,7 +334,7 @@ class BatteryService {
             @escaping @Sendable (Bool, String?) -> Void
         ) -> Void
     ) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let commandReply = XPCCommandReply(continuation)
             guard
                 let helper = ChargingHelperManager.shared.getHelper(errorHandler: { error in

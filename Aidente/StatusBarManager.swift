@@ -9,6 +9,7 @@ final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
     private let settingsWindowController: SettingsWindowController
     private let popover = NSPopover()
     private var displayObservation: Task<Void, Never>?
+    private var powerWidthObservation: Task<Void, Never>?
     private var previewWindow: NSWindow?
     private var dashboardWindow: NSWindow?
 
@@ -78,10 +79,10 @@ final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
         hosting.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(hosting)
         NSLayoutConstraint.activate([
-            hosting.topAnchor.constraint(equalTo: button.topAnchor, constant: 4),
-            hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -4),
-            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 7),
-            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -7),
+            hosting.topAnchor.constraint(equalTo: button.topAnchor, constant: 1),
+            hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -1),
+            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
+            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
         ])
     }
 
@@ -94,23 +95,44 @@ final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
                 self?.updateStatusItemLength()
             }
         }
+        powerWidthObservation = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                updateStatusItemLength()
+                await withCheckedContinuation { continuation in
+                    withObservationTracking {
+                        _ = self.viewModel.systemPower
+                        _ = self.viewModel.displayPercentage
+                    } onChange: {
+                        Task { @MainActor in continuation.resume() }
+                    }
+                }
+            }
+        }
     }
 
     private func updateStatusItemLength() {
+        let power = String(format: "%.2fW", abs(viewModel.systemPower))
+        let powerWidth = ceil((power as NSString).size(withAttributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
+        ]).width) + 3
         switch Defaults[.menuBarReadoutStyle] {
         case .batteryPercentage:
             switch Defaults[.batteryPercentageDisplayLocation] {
             case .hidden:
-                statusItem.length = 38
+                statusItem.length = 19
             case .insideIcon:
-                statusItem.length = 44
+                statusItem.length = 25
             case .nextToIcon:
-                statusItem.length = 64
+                let textWidth = ceil(("\(viewModel.displayPercentage)%" as NSString).size(withAttributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+                ]).width)
+                statusItem.length = textWidth + 21
             }
         case .systemPower:
-            statusItem.length = 88
+            statusItem.length = 19 + powerWidth
         case .batteryAndPower:
-            statusItem.length = 126
+            statusItem.length = 25 + powerWidth
         }
     }
 
@@ -265,6 +287,7 @@ final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
 
     deinit {
         displayObservation?.cancel()
+        powerWidthObservation?.cancel()
     }
 }
 
@@ -280,7 +303,7 @@ struct StatusBarContentView: View {
     @Default(.showBatteryStateInStatusIcon) var showState
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 3) {
             BatteryIndicatorView(
                 batteryLevel: viewModel.displayPercentage,
                 chargingMode: viewModel.chargingMode,
@@ -297,16 +320,25 @@ struct StatusBarContentView: View {
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
             case .batteryAndPower:
-                Text("\(viewModel.displayPercentage)% · \(formattedPower)")
+                Text(formattedPower)
                     .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                     .monospacedDigit()
             }
         }
         .fixedSize()
+        .lineLimit(1)
+        .help(AidenteL10n.t(
+            "电量 \(viewModel.displayPercentage)% · 系统功率 \(formattedPower)",
+            "Battery \(viewModel.displayPercentage)% · System power \(formattedPower)"
+        ))
     }
 
     private var batteryIndicatorLocation: PercentageDisplayLocation {
-        readoutStyle == .batteryPercentage ? percentageDisplayLocation : .hidden
+        switch readoutStyle {
+        case .batteryPercentage: percentageDisplayLocation
+        case .systemPower: .hidden
+        case .batteryAndPower: .insideIcon
+        }
     }
 
     private var formattedPower: String {

@@ -13,6 +13,47 @@ This project does not contain AlDente Pro code, assets, activation logic, or
 modified binaries. It implements similar battery-care workflows from public
 behavior descriptions and GPL-compatible open-source foundations.
 
+## Version 6.0.2 (Build 20)
+
+- Narrow vertical menu-bar battery with bottom-up fill. Icon-only menu width
+  decreases from 33 to 19 points, or from 37 to 25 points with the percentage
+  inside. Combined battery/power mode sizes the item to the actual wattage text.
+- Charging and adapter control are one serialized, verified transaction. Holding
+  a charge limit requests that the adapter remain connected; firmware may still
+  draw battery power above the ceiling. Normal mode resumes 2 percentage
+  points below the limit; sailing mode retains its configured range.
+- Automatic discharge defaults to off. Explicitly saved preferences are preserved.
+  When enabled, it starts on power connection or a limit change only if more than
+  1 point above the limit, and does not restart for normal charging overshoot.
+- The privileged helper acknowledges system sleep after applying/readback of the
+  sleep policy, including when unplugged before sleep. Wake keeps the hold until
+  the app sends a fresh policy. A low-frequency watchdog repairs register drift
+  while the daemon is able to run; it does not poll during deep sleep.
+- Charging control uses an explicitly authorized local LaunchDaemon with pinned
+  client/helper identities. Updated app/helper binaries require renewed
+  administrator authorization. Background polling never prompts for a password.
+  Wake re-probes hardware capabilities and XPC failures no longer leave capability
+  loading hung.
+- Capability-based selection of old `CH0B/CH0C`, `CHTE`, and new firmware-managed
+  `bfF0/bfD0/bfE0` controls (not selection by macOS version number). The firmware
+  interval is applied proactively while charging. A hold uses the configured
+  ceiling or captures the current raw capacity if it is lower, without chasing
+  subsequent drops. New firmware may run from battery above that ceiling;
+  adapter-only power is not guaranteed. The original interval is saved and
+  restored when management is disabled. Failed writes are read back and rolled
+  back rather than reported as success.
+- Diagnostics include requested/applied adapter and charging state, plus power
+  event and hardware-key logs.
+
+Firmware-specific sleep persistence
+must still be checked on affected machines; this is not a blanket compatibility
+claim for all macOS 26/27 firmware.
+
+Newer firmware shipped with macOS 15.8/26.7 and macOS 27 betas may remove or
+restrict charging registers. Aidente reports the unsupported control instead of
+silently substituting adapter disconnection (which would cycle the battery).
+Re-registering the helper cannot grant Apple's private firmware entitlements.
+
 ## Requirements
 
 - Apple Silicon MacBook
@@ -71,8 +112,9 @@ Users upgrading from 6.0 must install 6.0.1 manually once because 6.0 did not
 yet contain the updater. Updates after 6.0.1 can be completed inside Aidente.
 
 Drag `Aidente.app` to `/Applications`, open it, then enable charge management in
-Settings → Charging. macOS may ask you to approve the background helper in
-System Settings → General → Login Items.
+Settings → Charging, then authorize the administrator installation. After updating
+to 6.0.2, click Repair Control Service to authorize the new app/helper identity.
+See [administrator installation notes](administrator-install-notes.md).
 
 The distributed local build is ad-hoc signed, not Apple-notarized. If Finder
 blocks the first launch, right-click the app and choose Open.
@@ -124,6 +166,10 @@ BuildSupport/build_app.sh
 ```
 
 The output is `Dist/Aidente.app`.
+
+Run `zsh BuildSupport/test_charging.sh` after building for hardware-free charging
+policy and ordered-write regression tests. Render the production icon at 3x with
+`Dist/Aidente.app/Contents/MacOS/Aidente --render-status-icons=/tmp/Aidente-icons.png`.
 
 ## Safety and uninstall
 

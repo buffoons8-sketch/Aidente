@@ -66,7 +66,7 @@ struct ChargingSettingsView: View {
             ) {
                 AidenteSettingToggle(
                     "管理充电",
-                    subtitle: "需要在系统设置中批准 Aidente 后台控制服务",
+                    subtitle: AidenteL10n.t("首次启用或升级需管理员授权安装后台服务，无需开发者账号", "Administrator authorization installs or updates the service; no developer account required"),
                     icon: "switch.2",
                     colors: AidenteTheme.chargingColors,
                     isOn: Binding(
@@ -74,7 +74,7 @@ struct ChargingSettingsView: View {
                         set: { toggleManageCharging($0) }
                     )
                 )
-                .disabled(!hasAnyControl || helperManager.helperStatus == .requiresApproval)
+                .disabled(!hasAnyControl || helperManager.isBusy)
                 .opacity(
                     (!hasAnyControl || helperManager.helperStatus == .requiresApproval)
                         ? 0.50 : 1
@@ -125,11 +125,16 @@ struct ChargingSettingsView: View {
                     )
                 }
 
+                AidenteNotice(
+                    text: AidenteL10n.t("部分新固件在电量高于上限时会使用电池，不能保证仅由充电器供电；临时暂停使用当时电量的固件上限，允许小幅波动。", "Some newer firmware uses battery power above the limit. Temporary pause sets a firmware ceiling at the current level and may allow small fluctuations."),
+                    icon: "info.circle", colors: AidenteTheme.generalColors
+                )
+
                 if manageCharging {
                     AidenteRowDivider()
                     AidenteControlRow(
                         "充电上限",
-                        subtitle: "达到上限后暂停充电",
+                        subtitle: AidenteL10n.t("达到上限后由适配器供电，下降 2% 后补电；巡航模式使用巡航范围", "Use adapter power at the limit; recharge after a 2% drop, or use the sailing range"),
                         icon: "target",
                         colors: AidenteTheme.chargingColors
                     ) {
@@ -265,7 +270,7 @@ struct ChargingSettingsView: View {
 
                 AidenteCard(
                     "自动放电",
-                    subtitle: "接通电源且电量高于目标时，自动放电至充电上限。",
+                    subtitle: AidenteL10n.t("接入电源或降低上限时，若高出目标超过 1%，主动放电至目标；默认关闭。", "When connecting power or lowering the limit, discharge if more than 1% above target. Off by default."),
                     icon: "arrow.down.circle.fill",
                     colors: AidenteTheme.generalColors
                 ) {
@@ -514,27 +519,25 @@ struct ChargingSettingsView: View {
     }
 
     private func toggleManageCharging(_ enabled: Bool) {
-        do {
-            if enabled {
-                try helperManager.install()
-                if helperManager.helperStatus == .installed {
+        Task {
+            do {
+                if enabled {
+                    try await helperManager.enableForUser()
                     manageCharging = true
+                } else {
+                    try await chargeManager.disableChargingManagement()
                 }
-            } else {
-                try helperManager.uninstall()
-                manageCharging = false
+            } catch {
+                logger.error("Failed to \(enabled ? "install" : "uninstall") charging helper: \(error)")
+                installError = error.localizedDescription
             }
-        } catch {
-            logger.error("Failed to \(enabled ? "install" : "uninstall") charging helper: \(error)")
-            installError = error.localizedDescription
         }
     }
 
     private func checkApprovalStatus() {
         helperManager.refreshStatus()
         if helperManager.helperStatus == .installed {
-            manageCharging = true
-            chargeManager.checkControlService()
+            toggleManageCharging(true)
         }
     }
 

@@ -7,8 +7,6 @@ struct BatteryIndicatorView: View {
     var percentageDisplayLocation: PercentageDisplayLocation = .hidden
     var showState: Bool = false
 
-    @State private var insidePercentageFrame: CGRect?
-
     private var shouldShowInsidePercentage: Bool {
         percentageDisplayLocation == .insideIcon
     }
@@ -30,57 +28,44 @@ struct BatteryIndicatorView: View {
         return .primary
     }
 
-    private var foregroundColor: Color {
-        isLowPowerModeEnabled ? .black : .white
-    }
-
-    private var usesPassthrough: Bool {
-        !isCritical && !isLowPowerModeEnabled && chargingMode != .charging
+    private var filledTextColor: Color {
+        if !showState && !isLowPowerModeEnabled && chargingMode != .charging {
+            return Color(nsColor: .textBackgroundColor)
+        }
+        return .black.opacity(0.85)
     }
 
     private enum Layout {
-        static let batteryHeight: CGFloat = 12
-        static let batteryWidth: CGFloat = 24
-        static let insideBatteryHeight: CGFloat = 14
-        static let insideBatteryWidth: CGFloat = 28
-        static let terminalWidth: CGFloat = 2
-        static let terminalHeight: CGFloat = 5
-        static let insideTerminalWidth: CGFloat = 2.5
-        static let insideTerminalHeight: CGFloat = 6
-        static let cornerRadius: CGFloat = 3
-        static let insideCornerRadius: CGFloat = 3.5
+        static let batteryHeight: CGFloat = 17
+        static let batteryWidth: CGFloat = 11
+        static let insideBatteryHeight: CGFloat = 17
+        static let insideBatteryWidth: CGFloat = 17
+        static let terminalWidth: CGFloat = 5
+        static let terminalHeight: CGFloat = 2
+        static let cornerRadius: CGFloat = 2.5
+        static let insideCornerRadius: CGFloat = 2.5
         static let strokeWidth: CGFloat = 1
         static let fillInset: CGFloat = 1.5
         static let outlineOpacity: CGFloat = 0.4
-        static let glyphEdgeHint: CGFloat = 3
-        static let knockoutCoordinateSpace = "knockoutBody"
         static let insideTrackColor = Color(nsColor: .tertiaryLabelColor)
         static let levelAnimation: Animation = .easeInOut(duration: 0.25)
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             if shouldShowOutsidePercentage {
                 Text("\(batteryLevel)%")
                     .font(.system(size: 11))
                     .monospacedDigit()
             }
 
-            HStack(spacing: 0) {
+            VStack(spacing: 1) {
+                BatteryTerminal(
+                    width: Layout.terminalWidth,
+                    height: Layout.terminalHeight,
+                    cornerRadius: 1
+                )
                 batteryBody
-                if shouldShowInsidePercentage {
-                    BatteryTerminal(
-                        width: Layout.insideTerminalWidth,
-                        height: Layout.insideTerminalHeight,
-                        cornerRadius: 1.5
-                    )
-                } else {
-                    BatteryTerminal(
-                        width: Layout.terminalWidth,
-                        height: Layout.terminalHeight,
-                        cornerRadius: 1.25
-                    )
-                }
             }
         }
         .foregroundStyle(.primary)
@@ -125,65 +110,45 @@ struct BatteryIndicatorView: View {
             GeometryReader { geo in
                 Rectangle()
                     .fill(fillColor)
-                    .frame(width: fillWidth(usableWidth: geo.size.width))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: fillHeight(usableHeight: geo.size.height))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
                     .animation(Layout.levelAnimation, value: batteryLevel)
             }
 
-            insideContent
-        }
-        .coordinateSpace(name: Layout.knockoutCoordinateSpace)
-        .onPreferenceChange(InsidePercentageFramePreferenceKey.self) {
-            insidePercentageFrame = $0
+            insideContent.foregroundStyle(.primary)
+            insideContent.foregroundStyle(filledTextColor)
+                .mask(alignment: .bottom) {
+                    Rectangle().frame(height: fillHeight(usableHeight: Layout.insideBatteryHeight))
+                }
         }
         .compositingGroup()
         .clipShape(RoundedRectangle(cornerRadius: Layout.insideCornerRadius))
     }
 
-    private func fillWidth(usableWidth: CGFloat) -> CGFloat {
-        let raw = max(0, usableWidth * CGFloat(batteryLevel) / 100)
-        guard usesPassthrough, let textFrame = insidePercentageFrame else {
-            return raw
-        }
-        let digitCount = CGFloat(String(batteryLevel).count)
-        let digitWidth = textFrame.width / digitCount
-        let leftEdge = textFrame.minX
-        let rawIndex = ((raw - leftEdge) / digitWidth).rounded()
-        let index = min(max(rawIndex, 0), digitCount)
-        let snapped = min(max(leftEdge + index * digitWidth, 0), usableWidth)
-        return abs(snapped - raw) < Layout.glyphEdgeHint ? snapped : raw
+    private func fillHeight(usableHeight: CGFloat) -> CGFloat {
+        usableHeight * CGFloat(min(100, max(0, batteryLevel))) / 100
     }
 
     private var insideContent: some View {
-        HStack(spacing: 1.5) {
+        VStack(spacing: 0) {
             Text(verbatim: "\(batteryLevel)")
-                .font(.system(size: 10, weight: .heavy))
+                .font(.system(size: batteryLevel >= 100 ? 8 : 9, weight: .semibold))
                 .monospacedDigit()
-                .background {
-                    GeometryReader { textGeo in
-                        Color.clear.preference(
-                            key: InsidePercentageFramePreferenceKey.self,
-                            value: textGeo.frame(
-                                in: .named(Layout.knockoutCoordinateSpace)
-                            )
-                        )
-                    }
-                }
+                .fixedSize()
             chargingGlyph
-                .font(.system(size: 8, weight: .black))
         }
         .lineLimit(1)
-        .foregroundStyle(foregroundColor)
-        .blendMode(usesPassthrough ? .destinationOut : .normal)
+        .frame(width: Layout.insideBatteryWidth, height: Layout.insideBatteryHeight)
     }
 
     @ViewBuilder
     private var chargingGlyph: some View {
         if chargingMode == .charging {
             Image(systemName: "bolt.fill")
+                .resizable().scaledToFit().frame(width: 4, height: 5)
         } else if chargingMode == .pluggedIn {
             Image(systemName: "powerplug.fill")
-                .rotationEffect(.degrees(-90))
+                .resizable().scaledToFit().frame(width: 5, height: 5)
         }
     }
 
@@ -194,16 +159,13 @@ struct BatteryIndicatorView: View {
                 .opacity(Layout.outlineOpacity)
 
             GeometryReader { geo in
-                let fillWidth =
-                    (geo.size.width - Layout.fillInset * 2)
-                    * CGFloat(batteryLevel)
-                    / 100
+                let height = fillHeight(usableHeight: max(0, geo.size.height - Layout.fillInset * 2))
                 RoundedRectangle(
                     cornerRadius: Layout.cornerRadius - Layout.fillInset
                 )
                 .fill(fillColor)
-                .frame(width: max(0, fillWidth))
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: height)
+                .frame(maxHeight: .infinity, alignment: .bottom)
                 .padding(Layout.fillInset)
                 .animation(Layout.levelAnimation, value: batteryLevel)
             }
@@ -211,24 +173,14 @@ struct BatteryIndicatorView: View {
         .overlay {
             if chargingMode == .charging {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 10, weight: .black))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.6), radius: 0.5)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.black.opacity(0.85))
             } else if chargingMode == .pluggedIn {
                 Image(systemName: "powerplug.fill")
-                    .font(.system(size: 10, weight: .black))
-                    .rotationEffect(.degrees(-90))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.6), radius: 0.5)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.primary)
             }
         }
-    }
-}
-
-private struct InsidePercentageFramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect?
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
-        value = nextValue() ?? value
     }
 }
 
@@ -239,14 +191,13 @@ struct BatteryTerminal: View {
 
     var body: some View {
         UnevenRoundedRectangle(
-            topLeadingRadius: 0,
+            topLeadingRadius: cornerRadius,
             bottomLeadingRadius: 0,
-            bottomTrailingRadius: cornerRadius,
+            bottomTrailingRadius: 0,
             topTrailingRadius: cornerRadius
         )
         .fill(.primary)
         .frame(width: width, height: height)
         .opacity(0.4)
-        .offset(x: 1)
     }
 }

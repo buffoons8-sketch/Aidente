@@ -13,6 +13,10 @@ import Foundation
 }
 
 @objc public protocol AidenteControlProtocol {
+    func applyPowerPolicy(charging: Bool, adapter: Bool, managed: Bool,
+                          stopWhileSleeping: Bool, resetOnDisconnect: Bool,
+                          chargeCeiling: Int, rechargeBelow: Int,
+                          reply: @escaping @Sendable (Bool, String?) -> Void)
     func ping(
         reply: @escaping @Sendable (Bool, String?) -> Void
     )
@@ -30,4 +34,5 @@ import Foundation
     )
     func setResetOnDisconnect(_ enabled: Bool)
     func resetToDefaults()
+    func restoreDefaults(reply: @escaping @Sendable (Bool, String?) -> Void)
 }

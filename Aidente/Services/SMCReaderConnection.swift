@@ -21,6 +21,7 @@ class SMCReaderConnection {
     }
 
     func getHelper(errorHandler: @escaping @Sendable (Error) -> Void) -> AidenteReaderProtocol? {
+        if connection == nil { connect() }
         guard let connection else { return nil }
         return connection.remoteObjectProxyWithErrorHandler(errorHandler)
             as? AidenteReaderProtocol
@@ -28,31 +29,33 @@ class SMCReaderConnection {
 
     func connect() {
         logger.info("Setting up XPC connection to \(self.serviceName)")
-        connection = NSXPCConnection(serviceName: serviceName)
-        connection?.remoteObjectInterface = NSXPCInterface(
+        let newConnection = NSXPCConnection(serviceName: serviceName)
+        connection = newConnection
+        newConnection.remoteObjectInterface = NSXPCInterface(
             with: AidenteReaderProtocol.self
         )
 
-        connection?.invalidationHandler = { [weak self] in
+        newConnection.invalidationHandler = { [weak self, weak newConnection] in
             Task { @MainActor in
                 guard let self else { return }
                 self.logger.error("XPC connection invalidated")
-                self.connection = nil
-                self.reconnectTask?.cancel()
-                self.reconnectTask = nil
+                if self.connection === newConnection { self.connection = nil }
             }
         }
 
-        connection?.interruptionHandler = { [weak self] in
+        newConnection.interruptionHandler = { [weak self, weak newConnection] in
             Task { @MainActor in
                 guard let self else { return }
                 self.logger.warning("XPC connection interrupted")
-                self.connection = nil
-                self.scheduleReconnect()
+                if self.connection === newConnection {
+                    self.connection = nil
+                    newConnection?.invalidate()
+                    self.scheduleReconnect()
+                }
             }
         }
 
-        connection?.resume()
+        newConnection.resume()
         reconnectAttempts = 0
         logger.info("XPC connection resumed")
     }

@@ -5,6 +5,7 @@ import Observation
 import UserNotifications
 import os.log
 import smc_power
+import AidenteShared
 
 enum CalibrationStage: String {
     case idle
@@ -64,12 +65,29 @@ class ChargeManager {
 
     private var lastAdapterConnected: Bool?
     private var lastManageChargingEnabled: Bool?
-    private var hasReachedChargeLimit = false
+    private var limitPolicy = ChargeLimitPolicy()
+    private var lastLimit: Int?
+    private var lastAutomaticDischarge: Bool?
     private var lastNotifiedChargingState: Bool?
     private var heatProtectionPaused = false
     private var heatProtectionReviewDate = Date.distantPast
     private var isSystemSleeping = false
-    private var chargingCommandGeneration = 0
+    private var isDisablingControl = false
+    private struct PowerRequest: Equatable {
+        let charging: Bool
+        let adapter: Bool
+        let managed: Bool
+        let stopWhileSleeping: Bool
+        let resetOnDisconnect: Bool
+        let chargeCeiling: Int
+        let rechargeBelow: Int
+    }
+    private var pendingPowerRequest: PowerRequest?
+    private var appliedPowerRequest: PowerRequest?
+    private var powerTask: Task<Void, Never>?
+    private var verificationTask: Task<Void, Never>?
+    private var wakeTask: Task<Void, Never>?
+    private var lastPowerApplication = Date.distantPast
 
     private(set) var topUpActive = Defaults[.topUpActive]
     private(set) var forceDischargeActive = false
@@ -82,6 +100,17 @@ class ChargeManager {
     private var adapterControlError: String?
 
     var chargeLimitOverrideActive: Bool { topUpActive }
+    var controlDiagnostics: [String: String] {
+        [
+            "sleeping": String(isSystemSleeping),
+            "requestedCharging": pendingPowerRequest.map { String($0.charging) } ?? "unknown",
+            "requestedAdapter": pendingPowerRequest.map { String($0.adapter) } ?? "unknown",
+            "appliedCharging": appliedPowerRequest.map { String($0.charging) } ?? "unverified",
+            "appliedAdapter": appliedPowerRequest.map { String($0.adapter) } ?? "unverified",
+            "reachedLimit": String(limitPolicy.reachedLimit),
+            "automaticDischargeActive": String(limitPolicy.automaticDischargeActive),
+        ]
+    }
     var controlError: String? {
         guard let rawError =
             serviceControlError ?? chargingControlError ?? adapterControlError
@@ -177,6 +206,7 @@ class ChargeManager {
     }
 
     private func evaluate(controlState: BatteryControlState) {
+        guard !isDisablingControl else { return }
         guard !AidenteRuntime.isUIPreview else {
             operationStatus = .monitoring
             return
@@ -190,6 +220,8 @@ class ChargeManager {
             clearCachedState()
             stateWasCleared = true
         }
+
+        guard !isSystemSleeping else { return } // The daemon owns the sleep transition.
 
         guard Defaults[.manageCharging], controlState.adapterConnected else {
             if topUpActive, !controlState.adapterConnected {
@@ -227,17 +259,14 @@ class ChargeManager {
         var desiredLED: MagSafeLEDState?
         var chargingStateReason: String?
         let chargeLimit = Defaults[.chargeLimit]
+        if lastLimit != chargeLimit || lastAutomaticDischarge != Defaults[.automaticDischarge] {
+            limitPolicy = ChargeLimitPolicy()
+            stateWasCleared = true
+            lastLimit = chargeLimit
+            lastAutomaticDischarge = Defaults[.automaticDischarge]
+        }
 
-        if isSystemSleeping && Defaults[.stopChargingWhileSleeping] {
-            desiredCharging = false
-            desiredAdapter = true
-            desiredLED = Defaults[.manageMagSafeLED] ? .green : nil
-            chargingStateReason = AidenteL10n.t(
-                "Mac 睡眠时已暂停充电",
-                "Charging paused while the Mac is sleeping"
-            )
-            operationStatus = .sleeping
-        } else if manualPauseActive {
+        if manualPauseActive {
             desiredCharging = false
             desiredAdapter = true
             desiredLED = Defaults[.manageMagSafeLED] ? .green : nil
@@ -286,65 +315,20 @@ class ChargeManager {
                 )
             }
         } else {
-            if stateWasCleared && Defaults[.sailingMode]
-                && batteryPercentage >= chargeLimit - Defaults[.sailingModeLimit] {
-                hasReachedChargeLimit = true
-            }
-
-            if batteryPercentage > chargeLimit {
-                hasReachedChargeLimit = true
-                desiredCharging = false
-                desiredAdapter = !Defaults[.automaticDischarge]
-                desiredLED = Defaults[.manageMagSafeLED] ? .green : nil
-                chargingStateReason = AidenteL10n.t(
-                    "电量高于 \(chargeLimit)% 的充电上限",
-                    "Battery level is above the \(chargeLimit)% charge limit"
-                )
-                operationStatus = desiredAdapter ? .paused : .discharging(target: chargeLimit)
-            } else if batteryPercentage == chargeLimit {
-                hasReachedChargeLimit = true
-                desiredCharging = false
-                desiredAdapter = true
-                desiredLED = Defaults[.manageMagSafeLED] ? .green : nil
-                chargingStateReason = AidenteL10n.t(
-                    "电池已达到 \(chargeLimit)% 的充电上限",
-                    "Battery has reached the \(chargeLimit)% charge limit"
-                )
-                operationStatus = .paused
-            } else if Defaults[.sailingMode] {
-                let sailingThreshold = chargeLimit - Defaults[.sailingModeLimit]
-                let inSailingRange = batteryPercentage >= sailingThreshold
-
-                if inSailingRange && hasReachedChargeLimit {
-                    desiredCharging = false
-                    desiredAdapter = true
-                    desiredLED = Defaults[.manageMagSafeLED] ? .green : nil
-                    chargingStateReason = AidenteL10n.t(
-                        "正在 \(sailingThreshold)%–\(chargeLimit)% 之间巡航",
-                        "Sailing between \(sailingThreshold)% and \(chargeLimit)%"
-                    )
-                    operationStatus = .sailing
-                } else {
-                    hasReachedChargeLimit = false
-                    desiredCharging = true
-                    desiredAdapter = true
-                    desiredLED = Defaults[.manageMagSafeLED] ? .orange : nil
-                    chargingStateReason = AidenteL10n.t(
-                        "正在充电至 \(chargeLimit)%",
-                        "Charging to \(chargeLimit)%"
-                    )
-                    operationStatus = .charging
-                }
-            } else {
-                desiredCharging = true
-                desiredAdapter = true
-                desiredLED = Defaults[.manageMagSafeLED] ? .orange : nil
-                chargingStateReason = AidenteL10n.t(
-                    "电量低于上限，正在充电至 \(chargeLimit)%",
-                    "Battery is below the limit and charging to \(chargeLimit)%"
-                )
-                operationStatus = .charging
-            }
+            let target = limitPolicy.evaluate(
+                percentage: batteryPercentage, limit: chargeLimit,
+                sailing: Defaults[.sailingMode], sailingRange: Defaults[.sailingModeLimit],
+                automaticDischarge: Defaults[.automaticDischarge], initialize: stateWasCleared
+            )
+            desiredCharging = target.charging
+            desiredAdapter = target.adapter
+            desiredLED = Defaults[.manageMagSafeLED] ? (desiredCharging ? .orange : .green) : nil
+            operationStatus = !desiredAdapter ? .discharging(target: chargeLimit)
+                : desiredCharging ? .charging
+                : Defaults[.sailingMode] && batteryPercentage < chargeLimit ? .sailing : .paused
+            chargingStateReason = desiredCharging
+                ? AidenteL10n.t("正在充电至 \(chargeLimit)%", "Charging to \(chargeLimit)%")
+                : AidenteL10n.t("已暂停充电，保留适配器供电", "Charging paused; adapter power remains connected")
         }
 
         if calibrationStage == .idle {
@@ -360,12 +344,8 @@ class ChargeManager {
 
         let capabilities = batteryService.deviceCapabilities
 
-        if capabilities.chargingControl {
-            setCharging(enabled: desiredCharging, reason: chargingStateReason)
-        }
-        if capabilities.adapterControl {
-            setAdapter(enabled: desiredAdapter)
-        }
+        requestPower(charging: desiredCharging, adapter: desiredAdapter,
+                     managed: true, reason: chargingStateReason)
         if let desiredLED, capabilities.hasMagSafe, capabilities.magsafeLEDControl {
             setLED(state: desiredLED)
         }
@@ -512,79 +492,84 @@ class ChargeManager {
 
     private func clearCachedState() {
         lastNotifiedChargingState = nil
-        hasReachedChargeLimit = false
+        limitPolicy = ChargeLimitPolicy()
     }
 
     private func resetToDefaults() {
-        hasReachedChargeLimit = false
+        limitPolicy = ChargeLimitPolicy()
         lastManageChargingEnabled = false
         updateSleepAssertion(shouldPreventSleep: false)
-        guard ChargingHelperManager.shared.isInstalled else { return }
+        guard Defaults[.manageCharging] || ChargingHelperManager.shared.isInstalled else { return }
         let capabilities = batteryService.deviceCapabilities
-        if capabilities.chargingControl {
-            setCharging(enabled: true)
-        }
-        if capabilities.adapterControl {
-            setAdapter(enabled: true)
-        }
+        // Pre-arm sleep protection even when the charger is currently unplugged.
+        requestPower(charging: !manualPauseActive || !Defaults[.manageCharging],
+                     adapter: true, managed: Defaults[.manageCharging])
         if capabilities.hasMagSafe, capabilities.magsafeLEDControl {
             setLED(state: .reset)
         }
     }
 
-    private func setCharging(enabled: Bool, reason: String? = nil) {
-        chargingCommandGeneration += 1
-        let commandGeneration = chargingCommandGeneration
-        logger.info("Setting charging: \(enabled)")
-        Task {
-            do {
-                try await batteryService.manageBatteryCharging(enabled: enabled)
-                guard commandGeneration == chargingCommandGeneration else { return }
-                serviceControlError = nil
-                chargingControlError = nil
-                batteryService.scheduleSinglePoll()
-                sendChargingStateNotification(charging: enabled, reason: reason)
-                if !enabled {
-                    try? await Task.sleep(for: .seconds(6))
-                    guard commandGeneration == chargingCommandGeneration else { return }
-                    if batteryService.adapterMetrics.adapterConnected
-                        && batteryService.metrics.isCharging
-                    {
-                        chargingControlError =
-                            AidenteL10n.t(
-                                "SMC 已接受暂停设置，但系统仍报告电池正在充电。请点“修复控制服务”后重试。",
-                                "SMC accepted the pause setting, but the system still reports charging. Click Repair Control Service and try again."
-                            )
-                        lastNotifiedChargingState = nil
-                    }
-                }
-            } catch {
-                guard commandGeneration == chargingCommandGeneration else { return }
-                logger.error("Failed to set charging to \(enabled): \(error)")
-                chargingControlError =
-                    AidenteL10n.t(
-                        "充电暂停命令未生效：\(error.localizedDescription)",
-                        "The pause charging command did not take effect: \(error.localizedDescription)"
+    private func requestPower(charging: Bool, adapter: Bool, managed: Bool, reason: String? = nil) {
+        let normalLimit = calibrationStage == .idle && !topUpActive
+        let ceiling = normalLimit ? min(100, max(20, Defaults[.chargeLimit])) : 100
+        let range = normalLimit && Defaults[.sailingMode] ? max(2, Defaults[.sailingModeLimit]) : 2
+        pendingPowerRequest = PowerRequest(
+            charging: charging, adapter: adapter, managed: managed,
+            stopWhileSleeping: Defaults[.stopChargingWhileSleeping],
+            resetOnDisconnect: !Defaults[.stopChargingWhenAppClosed],
+            chargeCeiling: ceiling, rechargeBelow: max(0, ceiling - range)
+        )
+        guard powerTask == nil else { return }
+        guard pendingPowerRequest != appliedPowerRequest
+            || Date().timeIntervalSince(lastPowerApplication) >= 30 else { return }
+        powerTask = Task { [weak self] in
+            guard let self else { return }
+            defer { powerTask = nil }
+            while !Task.isCancelled, let request = pendingPowerRequest {
+                do {
+                    try await batteryService.applyPowerPolicy(
+                        charging: request.charging, adapter: request.adapter, managed: request.managed,
+                        stopWhileSleeping: request.stopWhileSleeping,
+                        resetOnDisconnect: request.resetOnDisconnect,
+                        chargeCeiling: request.chargeCeiling, rechargeBelow: request.rechargeBelow
                     )
-                lastNotifiedChargingState = nil
+                    let changed = appliedPowerRequest != request
+                    appliedPowerRequest = request
+                    lastPowerApplication = Date()
+                    guard pendingPowerRequest == request else { continue }
+                    clearControlErrors()
+                    batteryService.scheduleSinglePoll()
+                    sendChargingStateNotification(charging: request.charging, reason: reason)
+                    if changed { schedulePowerVerification(request) }
+                } catch {
+                    appliedPowerRequest = nil
+                    guard pendingPowerRequest == request else { continue }
+                    chargingControlError = AidenteL10n.t(
+                        "充电控制未生效：\(error.localizedDescription)",
+                        "Charging control did not take effect: \(error.localizedDescription)"
+                    )
+                    logger.error("POWER_REQUEST_FAILED \(error.localizedDescription, privacy: .public)")
+                    lastNotifiedChargingState = nil
+                }
+                break
             }
         }
     }
 
-    private func setAdapter(enabled: Bool) {
-        logger.info("Setting adapter: \(enabled)")
-        Task {
-            do {
-                try await batteryService.manageExternalPower(enabled: enabled)
-                serviceControlError = nil
-                adapterControlError = nil
-                batteryService.scheduleSinglePoll()
-            } catch {
-                logger.error("Failed to set adapter to \(enabled): \(error)")
-                adapterControlError = AidenteL10n.t(
-                    "适配器控制未生效：\(error.localizedDescription)",
-                    "Adapter control did not take effect: \(error.localizedDescription)"
+    private func schedulePowerVerification(_ request: PowerRequest) {
+        verificationTask?.cancel()
+        guard !request.charging, request.adapter else { return }
+        verificationTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let self, !Task.isCancelled, pendingPowerRequest == request,
+                  !isSystemSleeping else { return }
+            if batteryService.adapterMetrics.adapterConnected && batteryService.metrics.isCharging {
+                chargingControlError = AidenteL10n.t(
+                    "控制器已接受暂停，但系统仍报告充电。请导出诊断包并检查是否有其他充电管理软件。",
+                    "The controller accepted pause, but macOS still reports charging. Export diagnostics and check for another charging utility."
                 )
+                logger.error("POWER_READBACK_MISMATCH: macOS still reports charging after hold")
+                appliedPowerRequest = nil
             }
         }
     }
@@ -743,13 +728,20 @@ class ChargeManager {
     }
 
     func prepareForSleep() {
+        wakeTask?.cancel()
         isSystemSleeping = true
-        evaluate(controlState: batteryService.controlState)
+        verificationTask?.cancel()
     }
 
     func resumeFromSleep() {
-        isSystemSleeping = false
-        evaluate(controlState: batteryService.controlState)
+        appliedPowerRequest = nil
+        wakeTask?.cancel()
+        wakeTask = Task {
+            await batteryService.refreshAfterWake()
+            guard !Task.isCancelled else { return }
+            isSystemSleeping = false
+            checkControlService()
+        }
     }
 
     func configureHelperDisconnectPolicy() {
@@ -792,10 +784,26 @@ class ChargeManager {
     }
 
     func retryControlAfterRepair() {
+        appliedPowerRequest = nil
         clearControlErrors()
         clearCachedState()
         evaluate(controlState: batteryService.controlState)
         checkControlService()
+    }
+
+    func disableChargingManagement() async throws {
+        guard !isDisablingControl else { return }
+        isDisablingControl = true
+        defer { isDisablingControl = false }
+        powerTask?.cancel()
+        await powerTask?.value
+        try await ChargingHelperManager.shared.uninstall()
+        Defaults[.manageCharging] = false
+        pendingPowerRequest = nil
+        appliedPowerRequest = nil
+        clearControlErrors()
+        operationStatus = .monitoring
+        updateSleepAssertion(shouldPreventSleep: false)
     }
 
     private func clearControlErrors() {
@@ -834,6 +842,9 @@ class ChargeManager {
     }
 
     func stop() {
+        wakeTask?.cancel()
+        powerTask?.cancel()
+        verificationTask?.cancel()
         metricsObservation?.cancel()
         metricsObservation = nil
         settingsObservation?.cancel()

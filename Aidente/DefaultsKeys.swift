@@ -157,7 +157,7 @@ extension Defaults.Keys {
     static let chargeLimit = Key<Int>("chargeLimit", default: 80)
     static let sailingMode = Key<Bool>("sailingMode", default: true)
     static let sailingModeLimit = Key<Int>("sailingModeLimit", default: 5)
-    static let automaticDischarge = Key<Bool>("automaticDischarge", default: true)
+    static let automaticDischarge = Key<Bool>("automaticDischarge", default: false)
     static let disableSleepUntilChargeLimit = Key<Bool>("disableSleepUntilChargeLimit", default: false)
 
     // Charging - Heat Protection

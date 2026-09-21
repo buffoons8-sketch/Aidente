@@ -102,6 +102,11 @@ class IOKitService {
         continuation = nil
     }
 
+    func refreshMetrics() {
+        guard batteryService != 0 else { return }
+        emitMetrics()
+    }
+
     private func emitMetrics() {
         logger.debug("IOKit notification triggered")
 
