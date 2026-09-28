@@ -111,16 +111,24 @@ class ChargeManager {
             "automaticDischargeActive": String(limitPolicy.automaticDischargeActive),
         ]
     }
+    private var powerFlowError: String?
+    private var powerHoldVerified = false
+
     var controlError: String? {
         guard let rawError =
-            serviceControlError ?? chargingControlError ?? adapterControlError
+            serviceControlError ?? chargingControlError ?? adapterControlError ?? powerFlowError
         else {
             return nil
         }
         return AidenteL10n.controlError(rawError)
     }
     var operationStatusTitle: String {
-        controlError == nil ? operationStatus.title : AidenteL10n.t("充电控制未生效")
+        if controlError != nil { return AidenteL10n.t("充电控制未生效") }
+        if let request = pendingPowerRequest, request.managed, !request.charging,
+           request.adapter, batteryService.adapterMetrics.adapterConnected, !powerHoldVerified {
+            return AidenteL10n.t("暂停供电状态待确认", "Verifying charging hold and power flow")
+        }
+        return operationStatus.title
     }
     private var sleepAssertionID: IOPMAssertionID = IOPMAssertionID(kIOPMNullAssertionID)
 
@@ -328,7 +336,7 @@ class ChargeManager {
                 : Defaults[.sailingMode] && batteryPercentage < chargeLimit ? .sailing : .paused
             chargingStateReason = desiredCharging
                 ? AidenteL10n.t("正在充电至 \(chargeLimit)%", "Charging to \(chargeLimit)%")
-                : AidenteL10n.t("已暂停充电，保留适配器供电", "Charging paused; adapter power remains connected")
+                : AidenteL10n.t("已请求停止充电并保持适配器连接", "Requested charging hold with adapter connected")
         }
 
         if calibrationStage == .idle {
@@ -539,7 +547,7 @@ class ChargeManager {
                     guard pendingPowerRequest == request else { continue }
                     clearControlErrors()
                     batteryService.scheduleSinglePoll()
-                    sendChargingStateNotification(charging: request.charging, reason: reason)
+                    if request.charging { sendChargingStateNotification(charging: true, reason: reason) }
                     if changed { schedulePowerVerification(request) }
                 } catch {
                     appliedPowerRequest = nil
@@ -558,18 +566,49 @@ class ChargeManager {
 
     private func schedulePowerVerification(_ request: PowerRequest) {
         verificationTask?.cancel()
-        guard !request.charging, request.adapter else { return }
+        powerFlowError = nil
+        powerHoldVerified = false
+        guard request.managed, !request.charging, request.adapter else { return }
         verificationTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(8))
-            guard let self, !Task.isCancelled, pendingPowerRequest == request,
-                  !isSystemSleeping else { return }
-            if batteryService.adapterMetrics.adapterConnected && batteryService.metrics.isCharging {
-                chargingControlError = AidenteL10n.t(
-                    "控制器已接受暂停，但系统仍报告充电。请导出诊断包并检查是否有其他充电管理软件。",
-                    "The controller accepted pause, but macOS still reports charging. Export diagnostics and check for another charging utility."
-                )
-                logger.error("POWER_READBACK_MISMATCH: macOS still reports charging after hold")
-                appliedPowerRequest = nil
+            var verification = ChargeHoldVerification()
+            var lastSample: Date?
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(8)) } catch { return }
+                guard let self, pendingPowerRequest == request, !isSystemSleeping else { return }
+                await batteryService.refreshPowerForVerification()
+                guard !Task.isCancelled, pendingPowerRequest == request, !isSystemSleeping else { return }
+                guard batteryService.adapterMetrics.adapterConnected else {
+                    verification = ChargeHoldVerification()
+                    powerHoldVerified = false
+                    powerFlowError = nil
+                    continue
+                }
+                guard let sampleDate = batteryService.lastPowerSampleDate,
+                      sampleDate != lastSample, Date().timeIntervalSince(sampleDate) < 15 else {
+                    verification = ChargeHoldVerification()
+                    powerHoldVerified = false
+                    continue
+                }
+                lastSample = sampleDate
+                switch verification.sample(batteryPower: batteryService.metrics.batteryPower) {
+                case .pending: powerHoldVerified = false
+                case .held:
+                    powerHoldVerified = true
+                    powerFlowError = nil
+                    sendChargingStateNotification(charging: false, reason: nil)
+                case .charging:
+                    powerHoldVerified = false
+                    powerFlowError = AidenteL10n.t(
+                        "已请求暂停，但电池仍持续充电；尚未实现限充保持。",
+                        "Charging hold requested, but the battery is still charging."
+                    )
+                case .discharging:
+                    powerHoldVerified = false
+                    powerFlowError = AidenteL10n.t(
+                        "已请求暂停且适配器已连接，但电池仍持续放电。可能受固件或适配器供电能力限制，尚未实现适配器供电保持。",
+                        "Hold requested with AC connected, but the battery is still discharging. Firmware or adapter capacity may prevent an AC-powered hold."
+                    )
+                }
             }
         }
     }
@@ -801,6 +840,9 @@ class ChargeManager {
         Defaults[.manageCharging] = false
         pendingPowerRequest = nil
         appliedPowerRequest = nil
+        verificationTask?.cancel()
+        powerFlowError = nil
+        powerHoldVerified = false
         clearControlErrors()
         operationStatus = .monitoring
         updateSleepAssertion(shouldPreventSleep: false)

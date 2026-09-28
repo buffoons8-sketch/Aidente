@@ -13,6 +13,35 @@ This project does not contain AlDente Pro code, assets, activation logic, or
 modified binaries. It implements similar battery-care workflows from public
 behavior descriptions and GPL-compatible open-source foundations.
 
+## Version 6.1 (Build 21)
+
+The menu-bar battery is horizontal with left-to-right fill. Dark digits and
+charging marks retain one
+color across the state-colored charge and pale gray-blue empty track. The item
+uses 20 points without digits and 26 points with digits inside, including one
+point of padding on each side. Combined power readouts still fit their wattage
+text. Light/dark rendering includes empty, half-full and full batteries, low
+power mode, disabled state colors, and three-digit wattages.
+
+- Firmware holds use the unrounded hardware capacity and round up once when
+  writing the whole-percent boundary. This fixes fractional capacity above the
+  old rounded-down boundary switching an attached MacBook to battery power.
+  Holding above a newly lowered target does not deliberately discharge toward
+  that target. Normal charging still stops at the configured limit.
+- Both held endpoints remain fixed across polling and charge-limit edits until
+  charging resumes or power is disconnected. Awake and sleep holds are stored
+  separately so a temporary sleep boundary cannot replace the awake interval.
+- Paused charging is verified with three fresh power samples and rechecked
+  every eight seconds. Sustained charging or discharging reports a control
+  failure; an accepted register write alone no longer confirms a successful hold.
+- Firmware interval diagnostics include raw capacity, applied endpoints,
+  activation and sleep state. Explicit discharge remains a separate user action.
+
+Short observations on the affected machine showed zero battery power while
+the adapter supplied the system, including limit changes and sleep/wake
+transitions. Sustained sleep, full charge cycles and other firmware remain
+unverified. See [6.1 release notes](BuildSupport/release-notes-6.1.md).
+
 ## Version 6.0.2 (Build 20)
 
 - Narrow vertical menu-bar battery with bottom-up fill. Icon-only menu width
@@ -113,7 +142,7 @@ yet contain the updater. Updates after 6.0.1 can be completed inside Aidente.
 
 Drag `Aidente.app` to `/Applications`, open it, then enable charge management in
 Settings → Charging, then authorize the administrator installation. After updating
-to 6.0.2, click Repair Control Service to authorize the new app/helper identity.
+to 6.1, click Repair Control Service to authorize the new app/helper identity.
 See [administrator installation notes](administrator-install-notes.md).
 
 The distributed local build is ad-hoc signed, not Apple-notarized. If Finder

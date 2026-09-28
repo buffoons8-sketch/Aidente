@@ -21,6 +21,9 @@ do {
     print("CHIE=\(try SMCKit.shared.isKeyFound("CHIE"))")
 
     let battery = try SMCBattery.probe()
+    if let percentage = try? SMCBattery.firmwarePercentageExact() {
+        print(String(format: "firmwareRawPercentage=%.4f", percentage))
+    }
     if let voltage = try? SMCAdapter.getVoltage(), let current = try? SMCAdapter.getCurrent() {
         print(String(format: "adapter=%.2fV %.3fA %.2fW", voltage, current, voltage * current))
     }

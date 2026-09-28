@@ -27,7 +27,7 @@ final class ChargingHelper: NSObject, AidenteControlProtocol {
     private(set) var resetOnDisconnect = true
     private let queue = DispatchQueue(label: "com.aidente.app.control.power")
     private var policy: ChargingPowerPolicy?
-    private var firmwareHold = FirmwareHoldPolicy()
+    private var firmwarePolicy = FirmwarePowerPolicy()
     private var hasControlledPower = false
     private var sleeping = false
     private var clients = 0
@@ -188,20 +188,22 @@ final class ChargingHelper: NSObject, AidenteControlProtocol {
                         throw CocoaError(.fileWriteUnknown)
                     }
                 }
-                if target.charging {
-                    _ = firmwareHold.upper(charging: true, ceiling: policy.chargeCeiling, percentage: 100)
-                    if policy.chargeCeiling == 100 {
-                        var unlimited = try controller.read()
-                        unlimited.activation = 0
-                        try controller.replace(with: unlimited)
-                    } else {
-                        try controller.set(lower: policy.rechargeBelow, upper: policy.chargeCeiling)
-                    }
-                } else {
-                    let upper = firmwareHold.upper(charging: false, ceiling: policy.chargeCeiling,
-                                                   percentage: try SMCBattery.firmwarePercentage())
-                    let lower = min(policy.rechargeBelow, max(0, upper - 2))
+                let percentage = try SMCBattery.firmwarePercentageExact()
+                let externalConnected = try SMCBattery.externalPowerConnected()
+                let previous = try controller.read()
+                switch firmwarePolicy.target(policy: policy, percentage: percentage,
+                                             externalConnected: externalConnected) {
+                case .unlimited:
+                    var unlimited = previous
+                    unlimited.activation = 0
+                    try controller.replace(with: unlimited)
+                case .interval(let lower, let upper):
                     try controller.set(lower: lower, upper: upper)
+                }
+                let applied = try controller.read()
+                if applied != previous {
+                    let rawPercentage = String(format: "%.4f", percentage)
+                    logger.notice("FIRMWARE_INTERVAL_APPLIED raw=\(rawPercentage, privacy: .public) lower=\(applied.lower) upper=\(applied.upper) activation=\(applied.activation) sleeping=\(policy.sleeping) chargingRequested=\(target.charging) externalConnected=\(externalConnected)")
                 }
             } else {
                 try restoreFirmwareLimit()
@@ -350,7 +352,7 @@ final class ChargingHelper: NSObject, AidenteControlProtocol {
 
     private func restoreOnQueue() throws {
         policy = nil
-        firmwareHold = FirmwareHoldPolicy()
+        firmwarePolicy.reset()
         if battery.capabilities.forceDischargeControl {
             try battery.setForceDischarging(false)
         }

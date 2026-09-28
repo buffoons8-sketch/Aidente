@@ -80,6 +80,8 @@ class BatteryService {
         startIOKitMonitoring()
     }
 
+    private(set) var lastPowerSampleDate: Date?
+
     func loadCapabilities() async {
         do {
             let capabilities: DeviceCapabilities = try await withCheckedThrowingContinuation { continuation in
@@ -216,6 +218,10 @@ class BatteryService {
         }
     }
 
+    func refreshPowerForVerification() async {
+        await pollSMCOnce()
+    }
+
     private func pollSMCOnce() async {
         async let batteryData = fetchSMCBatteryData()
         async let adapterData = fetchSMCAdapterData()
@@ -247,6 +253,7 @@ class BatteryService {
         if updatedAdapter != adapterMetrics {
             adapterMetrics = updatedAdapter
         }
+        lastPowerSampleDate = Date()
         updateControlState(from: updatedBattery, adapter: updatedAdapter)
     }
 

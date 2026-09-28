@@ -81,8 +81,8 @@ final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
         NSLayoutConstraint.activate([
             hosting.topAnchor.constraint(equalTo: button.topAnchor, constant: 1),
             hosting.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -1),
-            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
-            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
+            hosting.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: BatteryIndicatorLayout.statusInset),
+            hosting.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -BatteryIndicatorLayout.statusInset),
         ])
     }
 
@@ -116,23 +116,26 @@ final class StatusBarManager: NSObject, NSPopoverDelegate, NSWindowDelegate {
         let powerWidth = ceil((power as NSString).size(withAttributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
         ]).width) + 3
+        let outerWidth = BatteryIndicatorLayout.statusInset * 2
+        let iconWidth = BatteryIndicatorLayout.width(insidePercentage: false) + outerWidth
+        let percentageIconWidth = BatteryIndicatorLayout.width(insidePercentage: true) + outerWidth
         switch Defaults[.menuBarReadoutStyle] {
         case .batteryPercentage:
             switch Defaults[.batteryPercentageDisplayLocation] {
             case .hidden:
-                statusItem.length = 19
+                statusItem.length = iconWidth
             case .insideIcon:
-                statusItem.length = 25
+                statusItem.length = percentageIconWidth
             case .nextToIcon:
                 let textWidth = ceil(("\(viewModel.displayPercentage)%" as NSString).size(withAttributes: [
                     .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
                 ]).width)
-                statusItem.length = textWidth + 21
+                statusItem.length = textWidth + iconWidth + BatteryIndicatorLayout.outsideTextSpacing
             }
         case .systemPower:
-            statusItem.length = 19 + powerWidth
+            statusItem.length = iconWidth + powerWidth
         case .batteryAndPower:
-            statusItem.length = 25 + powerWidth
+            statusItem.length = percentageIconWidth + powerWidth
         }
     }
 

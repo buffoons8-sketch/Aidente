@@ -20,14 +20,11 @@ import SwiftUI
 
     private static func row(dark: Bool) -> some View {
         HStack(spacing: 20) {
-            ForEach([5, 20, 79, 100], id: \.self) { level in
+            ForEach([0, 5, 50, 79, 100], id: \.self) { level in
                 VStack(spacing: 12) {
-                    BatteryIndicatorView(batteryLevel: level, chargingMode: .discharging,
-                                         percentageDisplayLocation: .insideIcon, showState: true)
-                    BatteryIndicatorView(batteryLevel: level, chargingMode: .charging,
-                                         percentageDisplayLocation: .insideIcon, showState: true)
-                    BatteryIndicatorView(batteryLevel: level, chargingMode: .pluggedIn,
-                                         percentageDisplayLocation: .insideIcon, showState: true)
+                    insideIcon(level: level, mode: .discharging)
+                    insideIcon(level: level, mode: .charging)
+                    insideIcon(level: level, mode: .pluggedIn)
                     BatteryIndicatorView(batteryLevel: level, chargingMode: .pluggedIn,
                                          percentageDisplayLocation: .nextToIcon, showState: true)
                 }
@@ -44,12 +41,32 @@ import SwiftUI
                             .lineLimit(1).fixedSize()
                     }
                     .fixedSize()
+                    .padding(.horizontal, BatteryIndicatorLayout.statusInset)
                     .border(Color.orange.opacity(0.4))
                 }
+            }
+            VStack(spacing: 12) {
+                insideIcon(level: 50, mode: .discharging, lowPower: true)
+                insideIcon(level: 50, mode: .discharging, showState: false)
+                insideIcon(level: 100, mode: .pluggedIn, showState: false)
+                BatteryIndicatorView(batteryLevel: 50, chargingMode: .charging,
+                                     percentageDisplayLocation: .hidden, showState: true)
             }
         }
         .padding(24)
         .background(dark ? Color(white: 0.12) : Color(white: 0.96))
         .environment(\.colorScheme, dark ? .dark : .light)
+    }
+
+    private static func insideIcon(level: Int, mode: ChargingMode,
+                                   lowPower: Bool = false, showState: Bool = true) -> some View {
+        BatteryIndicatorView(batteryLevel: level, chargingMode: mode,
+                             isLowPowerModeEnabled: lowPower,
+                             percentageDisplayLocation: .insideIcon, showState: showState)
+            .padding(.horizontal, BatteryIndicatorLayout.statusInset)
+            .frame(width: BatteryIndicatorLayout.width(insidePercentage: true)
+                    + BatteryIndicatorLayout.statusInset * 2, height: 22)
+            .clipped()
+            .border(Color.orange.opacity(0.18))
     }
 }

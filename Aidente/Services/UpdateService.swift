@@ -455,6 +455,9 @@ final class UpdateService {
             && !isVersion("6.0.1", newerThan: "6.0.1")
             && isVersion("v6.0.10", newerThan: "6.0.2")
             && !isVersion("6.0", newerThan: "6.0.1")
+            && isVersion("6.1", newerThan: "6.0.2")
+            && !isVersion("6.1", newerThan: "6.1.0")
+            && !isVersion("6.0.99", newerThan: "6.1")
             && isVersion("7", newerThan: "6.99.99")
     }
 
@@ -1068,15 +1071,15 @@ final class UpdateService {
     }
 
     private static let previewRelease = AidenteUpdateRelease(
-        version: "6.0.2",
-        name: "Aidente 6.0.2",
+        version: "6.1",
+        name: "Aidente 6.1",
         notes: "Update preview",
         pageURL: URL(
-            string: "https://github.com/buffoons8-sketch/Aidente/releases/tag/v6.0.2"
+            string: "https://github.com/buffoons8-sketch/Aidente/releases/tag/v6.1"
         )!,
-        assetName: "Aidente-6.0.2-macOS-arm64.zip",
+        assetName: "Aidente-6.1-macOS-arm64.zip",
         assetURL: URL(
-            string: "https://github.com/buffoons8-sketch/Aidente/releases/download/v6.0.2/Aidente-6.0.2-macOS-arm64.zip"
+            string: "https://github.com/buffoons8-sketch/Aidente/releases/download/v6.1/Aidente-6.1-macOS-arm64.zip"
         )!,
         assetSize: 2_500_000,
         sha256: String(repeating: "0", count: 64)

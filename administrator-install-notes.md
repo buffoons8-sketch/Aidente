@@ -1,4 +1,4 @@
-# Aidente 管理员授权安装版（6.0.2 / Build 20）
+# Aidente 管理员授权安装版（6.1 / Build 21）
 
 ## 使用
 

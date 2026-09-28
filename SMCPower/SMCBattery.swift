@@ -105,7 +105,24 @@ public struct SMCBattery: Sendable, BatteryPowerControlling {
         Double(try SMCKit.shared.read("B0AC") as Int16) / 1000.0
     }
 
+    public static func externalPowerConnected() throws -> Bool {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
+        guard service != 0 else { throw SMCBatteryError.unsupportedCapability }
+        defer { IOObjectRelease(service) }
+        guard let value = IORegistryEntryCreateCFProperty(service, "ExternalConnected" as CFString,
+                                                          kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber else {
+            throw SMCBatteryError.unsupportedCapability
+        }
+        return value.boolValue
+    }
+
     public static func firmwarePercentage() throws -> Int {
+        max(1, Int(try firmwarePercentageExact().rounded(.down)))
+    }
+
+    /// Retain fractional raw capacity until the control policy selects an
+    /// integer firmware boundary. Display rounding is not a control decision.
+    public static func firmwarePercentageExact() throws -> Double {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"))
         guard service != 0 else { throw SMCBatteryError.unsupportedCapability }
         defer { IOObjectRelease(service) }
@@ -113,8 +130,12 @@ public struct SMCBattery: Sendable, BatteryPowerControlling {
             (IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber)?.doubleValue
         }
         guard let current = number("AppleRawCurrentCapacity"), let full = number("AppleRawMaxCapacity"),
-              full > 0, current >= 0 else { throw SMCBatteryError.unsupportedCapability }
-        return max(1, min(100, Int((current / full * 100).rounded(.down))))
+              full.isFinite, current.isFinite, full > 0, current >= 0 else {
+            throw SMCBatteryError.unsupportedCapability
+        }
+        let percentage = current / full * 100
+        guard percentage.isFinite else { throw SMCBatteryError.unsupportedCapability }
+        return max(0, min(100, percentage))
     }
 
     public func getChargingInhibited() throws -> Bool {
@@ -123,7 +144,7 @@ public struct SMCBattery: Sendable, BatteryPowerControlling {
         if usesFirmwareChargeLimit {
             let state = try FirmwareChargeLimitController(registers: SMCFirmwareLimitRegisters()).read()
             guard state.activation == 2 else { return false }
-            return try Self.firmwarePercentage() >= Int(state.upper)
+            return try Self.firmwarePercentageExact() >= Double(state.upper)
         }
 
         if hasCHTE {
@@ -155,7 +176,7 @@ public struct SMCBattery: Sendable, BatteryPowerControlling {
         if usesFirmwareChargeLimit {
             let controller = FirmwareChargeLimitController(registers: SMCFirmwareLimitRegisters())
             if inhibited {
-                let upper = try Self.firmwarePercentage()
+                let upper = max(1, Int(try Self.firmwarePercentageExact().rounded(.up)))
                 try controller.set(lower: max(0, upper - 2), upper: upper)
             } else {
                 var state = try controller.read()

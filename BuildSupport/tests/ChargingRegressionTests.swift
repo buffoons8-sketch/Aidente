@@ -61,11 +61,99 @@ final class SimulatedBattery: BatteryPowerControlling {
         }
         var normal = ChargeLimitPolicy()
         var firmwareHold = FirmwareHoldPolicy()
-        check(firmwareHold.upper(charging: false, ceiling: 60, percentage: 90) == 60, "Hold uses real limit, never 1 percent")
-        check(firmwareHold.upper(charging: false, ceiling: 60, percentage: 55) == 60, "Polling must not chase declining capacity")
+        check(firmwareHold.upper(charging: false, ceiling: 60, percentage: 90) == 90, "Above-target hold must not force discharge to configured ceiling")
+        check(firmwareHold.upper(charging: false, ceiling: 60, percentage: 55) == 90, "Polling must not chase declining capacity")
         check(firmwareHold.upper(charging: true, ceiling: 80, percentage: 50) == 80, "Resume restores target")
         check(firmwareHold.upper(charging: false, ceiling: 80, percentage: 50) == 50, "Manual pause captures current capacity")
         check(firmwareHold.upper(charging: false, ceiling: 80, percentage: 49) == 50, "Manual hold remains stable")
+        firmwareHold.adapterDisconnected()
+        check(firmwareHold.upper(charging: false, ceiling: 80, percentage: 45) == 45,
+              "Reconnection captures current capacity instead of an obsolete pre-disconnect hold")
+        var reached = FirmwareHoldPolicy()
+        check(reached.upper(charging: true, ceiling: 60, percentage: 59) == 60, "Below limit still charges to configured limit")
+        check(reached.upper(charging: false, ceiling: 60, percentage: 60) == 60, "Reaching limit must hold without raising target")
+        check(reached.upper(charging: false, ceiling: 60, percentage: 59) == 60, "Hold must not ratchet down with discharge")
+        check(reached.upper(charging: false, ceiling: 50, percentage: 60) == 60, "Lowering target must not discharge battery")
+        check(reached.lower(rechargeBelow: 40, upper: 60) == 40, "Capture lower threshold with the hold")
+        for target in [23, 60, 35, 50, 20] {
+            check(reached.upper(charging: false, ceiling: target, percentage: 59) == 60,
+                  "Dragging a paused target must not recapture a rounded-down battery level")
+            check(reached.lower(rechargeBelow: max(0, target - 10), upper: 60) == 40,
+                  "Dragging must not rewrite the lower endpoint either")
+        }
+        _ = reached.upper(charging: true, ceiling: 80, percentage: 59)
+        check(reached.upper(charging: false, ceiling: 80, percentage: 80) == 80,
+              "A new charge cycle captures a new upper threshold")
+        check(reached.lower(rechargeBelow: 70, upper: 80) == 70,
+              "A new charge cycle applies the latest lower threshold")
+        var fractionalHold = FirmwareHoldPolicy()
+        check(fractionalHold.upper(charging: false, ceiling: 60, percentage: 54.663355) == 55,
+              "The observed 54.66% battery must not get a 54% discharge ceiling")
+        check(fractionalHold.upper(charging: false, ceiling: 50, percentage: 54.32) == 55,
+              "Rounded hold remains stable when changing the target or reading")
+        fractionalHold.adapterDisconnected()
+        check(fractionalHold.upper(charging: false, ceiling: 100, percentage: 99.99) == 100,
+              "A near-full battery rounds safely to the maximum firmware percentage")
+        for percentage in [0.0, 0.1, 20.01, 54.66, 59.999, 60.0, 73.5, 99.999, 100.0] {
+            var captured = FirmwareHoldPolicy()
+            let upper = captured.upper(charging: false, ceiling: 60, percentage: percentage)
+            check(Double(upper) >= percentage && upper <= 100,
+                  "A freshly captured hold never places the ceiling below fractional capacity")
+        }
+        var awake = ChargingPowerPolicy()
+        awake.managed = true
+        awake.charging = false
+        awake.chargeCeiling = 60
+        awake.rechargeBelow = 50
+        awake.stopWhileSleeping = true
+        var separated = FirmwarePowerPolicy()
+        check(separated.target(policy: awake, percentage: 74.25, externalConnected: true)
+                == .interval(lower: 50, upper: 75), "Capture an awake fractional hold")
+        var sleepRequest = awake
+        sleepRequest.sleeping = true
+        check(separated.target(policy: sleepRequest, percentage: 54.66, externalConnected: true)
+                == .interval(lower: 50, upper: 55), "Sleep captures an independent safe boundary")
+        check(separated.target(policy: sleepRequest, percentage: 54.32, externalConnected: true)
+                == .interval(lower: 50, upper: 55), "Dark-wake/watchdog does not lower the sleep boundary")
+        check(separated.target(policy: awake, percentage: 54.32, externalConnected: true)
+                == .interval(lower: 50, upper: 75), "Wake restores the saved awake interval, not sleep's lower boundary")
+        check(separated.target(policy: sleepRequest, percentage: 53.5, externalConnected: true)
+                == .interval(lower: 50, upper: 54), "The next sleep session captures fresh capacity")
+        _ = separated.target(policy: awake, percentage: 52.5, externalConnected: false)
+        check(separated.target(policy: awake, percentage: 52.5, externalConnected: true)
+                == .interval(lower: 50, upper: 53), "Unplugging discards obsolete awake and sleep holds")
+        var chargingRequest = awake
+        chargingRequest.charging = true
+        var sleepDuringCharging = FirmwarePowerPolicy()
+        check(sleepDuringCharging.target(policy: chargingRequest, percentage: 54.66, externalConnected: true)
+                == .interval(lower: 50, upper: 60), "Normal charging retains the configured 60% ceiling")
+        var chargingSleep = chargingRequest
+        chargingSleep.sleeping = true
+        check(sleepDuringCharging.target(policy: chargingSleep, percentage: 54.66, externalConnected: true)
+                == .interval(lower: 50, upper: 55), "Sleep while charging uses a fractional safe hold")
+        check(sleepDuringCharging.target(policy: chargingRequest, percentage: 54.32, externalConnected: true)
+                == .interval(lower: 50, upper: 60), "Fresh awake charge request restores configured limits")
+        check(sleepDuringCharging.target(policy: chargingSleep, percentage: 57.2, externalConnected: true)
+                == .interval(lower: 50, upper: 58), "Charging wake also resets the previous sleep snapshot")
+        chargingRequest.chargeCeiling = 100
+        chargingRequest.rechargeBelow = 98
+        check(sleepDuringCharging.target(policy: chargingRequest, percentage: 54.66, externalConnected: true)
+                == .unlimited, "Only an actual charge-to-full request permits unlimited charging")
+        var pausedAtFull = chargingRequest
+        pausedAtFull.charging = false
+        check(sleepDuringCharging.target(policy: pausedAtFull, percentage: 54.66, externalConnected: true)
+                == .interval(lower: 53, upper: 55), "A pause never disables the firmware limit")
+        var flow = ChargeHoldVerification()
+        check(flow.sample(batteryPower: -20) == .pending, "Single discharge sample may be transient")
+        check(flow.sample(batteryPower: -18) == .pending, "Require sustained discharge")
+        check(flow.sample(batteryPower: -19) == .discharging, "AC attached must not hide sustained discharge")
+        check(flow.sample(batteryPower: 0.2) == .pending, "Recovery needs stable samples")
+        check(flow.sample(batteryPower: -0.3) == .pending, "Small fluctuations are tolerated")
+        check(flow.sample(batteryPower: 0) == .held, "Stable near-zero flow verifies hold")
+        _ = flow.sample(batteryPower: 15)
+        _ = flow.sample(batteryPower: 16)
+        check(flow.sample(batteryPower: 14) == .charging, "Continuing to charge is not a successful hold")
+        check(flow.sample(batteryPower: .nan) == .pending, "Invalid power readings reset verification")
         check(!ControlServiceRefreshPolicy.needsRefresh(previous: nil, current: "os:hash"),
               "First registration must not be torn down immediately")
         check(!ControlServiceRefreshPolicy.needsRefresh(previous: "os:hash", current: "os:hash"),
@@ -137,6 +225,25 @@ final class SimulatedBattery: BatteryPowerControlling {
             try hardware.applyPowerState(charging: false, adapter: true)
             preconditionFailure("Readback must reject ignored firmware writes")
         } catch SMCBatteryError.stateVerificationFailed { checks += 1 }
+        let holdRegisters = SimulatedFirmware()
+        let holdController = FirmwareChargeLimitController(registers: holdRegisters)
+        var aboveTargetHold = FirmwareHoldPolicy()
+        let heldUpper = aboveTargetHold.upper(charging: false, ceiling: 60, percentage: 90)
+        try holdController.set(lower: 50, upper: heldUpper)
+        check(holdRegisters.state == FirmwareChargeLimitState(activation: 2, lower: 50, upper: 90),
+              "Above-target hold keeps limit active at current capacity, never disables it or writes 60")
+        holdRegisters.operations = []
+        let repeatedUpper = aboveTargetHold.upper(charging: false, ceiling: 60, percentage: 89)
+        try holdController.set(lower: 50, upper: repeatedUpper)
+        check(holdRegisters.operations.isEmpty, "Declining capacity must not cause repeated threshold writes")
+        let frozenLower = aboveTargetHold.lower(rechargeBelow: 50, upper: repeatedUpper)
+        for target in [40, 23, 60] {
+            let upper = aboveTargetHold.upper(charging: false, ceiling: target, percentage: 89)
+            let lower = aboveTargetHold.lower(rechargeBelow: target - 10, upper: upper)
+            try holdController.set(lower: lower, upper: upper)
+            check(lower == frozenLower && holdRegisters.operations.isEmpty,
+                  "Slider edits must produce zero firmware writes while paused")
+        }
         let firmware = SimulatedFirmware()
         let firmwareControl = FirmwareChargeLimitController(registers: firmware)
         try firmwareControl.set(lower: 75, upper: 80)
@@ -154,7 +261,7 @@ final class SimulatedBattery: BatteryPowerControlling {
         check(firmware.state == baseline, "Partial firmware write restores the original interval")
         try firmwareControl.set(lower: 0, upper: 1)
         check(firmware.state.upper == 1 && firmware.state.activation == 2,
-              "Sleep/manual hold uses the firmware limit, not adapter cut")
+              "Low-level codec supports the minimum interval; production policy must not use it to force a hold")
         try firmwareControl.replace(with: baseline)
         check(firmware.state == baseline, "Original system settings restore exactly")
         firmware.denyWrites = true
